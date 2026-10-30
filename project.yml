@@ -1,0 +1,47 @@
+name: Betternotes
+options:
+  bundleIdPrefix: com.betternotes
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation
+    from: 0.9.19
+  MSAL:
+    url: https://github.com/AzureAD/microsoft-authentication-library-for-objc
+    from: 1.4.0
+targets:
+  Betternotes:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources: [Betternotes]
+    dependencies:
+      - package: ZIPFoundation
+      - package: MSAL
+    info:
+      path: Betternotes/Info.plist
+      properties:
+        CFBundleDisplayName: Betternotes
+        UILaunchScreen: {}
+        UISupportsDocumentBrowser: false
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: GoodNotes Document
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [com.betternotes.goodnotes]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.betternotes.goodnotes
+            UTTypeDescription: GoodNotes Document
+            UTTypeConformsTo: [public.data, public.archive]
+            UTTypeTagSpecification:
+              public.filename-extension: [goodnotes]
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "2"
+        PRODUCT_BUNDLE_IDENTIFIER: com.betternotes.app
