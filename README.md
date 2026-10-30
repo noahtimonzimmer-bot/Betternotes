@@ -23,17 +23,15 @@ python3 tools/goodnotes.py datei.goodnotes ausgabe/
 ```
 rendert jede Seite als PNG (PDF + Handschrift), braucht Pillow und `pdftoppm`.
 
-## Auf das iPad bringen (Mac mit Xcode nötig)
-```bash
-brew install xcodegen
-```
-```bash
-xcodegen generate
-```
-```bash
-open Betternotes.xcodeproj
-```
-In Xcode: Team unter *Signing & Capabilities* wählen, iPad anschließen, Run.
+## Auf das iPad bringen (nur iPad, kein Mac nötig)
+1. **Swift Playgrounds** aus dem App Store laden (kostenlos, von Apple).
+2. In Safari das Repo auf GitHub öffnen › *Code* › *Download ZIP*.
+3. In der Dateien-App die ZIP antippen (entpackt sich) und den Ordner `Betternotes.swiftpm` öffnen – er startet in Swift Playgrounds.
+4. Oben auf ▶︎ tippen. Die App läuft dann auf dem iPad; Notizen bleiben gespeichert.
+
+Optional: Mit einem Apple-Developer-Account (99 $/Jahr) lässt sich die App aus Swift Playgrounds per *App Store Connect* nach TestFlight hochladen und wie eine normale App mit eigenem Symbol installieren.
+
+Auf einem Mac geht `Betternotes.swiftpm` auch direkt in Xcode.
 
 ## OneDrive
-In Azure unter *App registrations* eine App anlegen (Redirect `msauth.com.betternotes.app://auth`), die Client-ID in `Betternotes/Sync/OneDriveSync.swift` eintragen.
+In Safari auf portal.azure.com › *App registrations* › *New*: Kontotyp „Persönliche Microsoft-Konten“, Plattform „Mobile und Desktop“, Redirect `betternotes://auth`. Die Client-ID in `Betternotes.swiftpm/Sync/OneDriveSync.swift` eintragen.

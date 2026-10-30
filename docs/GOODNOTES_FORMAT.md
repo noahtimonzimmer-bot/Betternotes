@@ -1,7 +1,7 @@
 # GoodNotes-Dateiformat (`.goodnotes`, schema 26)
 
 Reverse-engineered aus eigenen Exporten zur Interoperabilität. Referenz-Implementierung:
-`tools/goodnotes.py` (rendert jede Seite als PNG), Swift-Port: `Betternotes/Import/GoodNotesFormat.swift`.
+`tools/goodnotes.py` (rendert jede Seite als PNG), Swift-Port: `Betternotes.swiftpm/Import/GoodNotesFormat.swift`.
 Verifiziert durch Vergleich der gerenderten Seiten mit `thumbnail.jpg` und Screenshots aus GoodNotes.
 
 ## Container

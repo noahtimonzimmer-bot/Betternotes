@@ -45,7 +45,8 @@ struct LibraryView: View {
                 }
             }
             .fileImporter(isPresented: $importing,
-                          allowedContentTypes: [.pdf, UTType(filenameExtension: "goodnotes") ?? .data],
+                          // .item: .goodnotes has no system-declared type; we branch on the extension.
+                          allowedContentTypes: [.pdf, .item],
                           allowsMultipleSelection: true) { result in
                 handleImport(result)
             }
