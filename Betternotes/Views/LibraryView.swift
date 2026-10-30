@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct LibraryView: View {
     @EnvironmentObject var store: DocumentStore
+    @EnvironmentObject var settings: AppSettings
     @State private var importing = false
     @State private var errorText: String?
 
@@ -31,8 +32,11 @@ struct LibraryView: View {
                 .padding(24)
             }
             .navigationTitle("Betternotes")
-            .navigationDestination(for: NoteDocument.self) { EditorView(document: $0) }
+            .navigationDestination(for: NoteDocument.self) { EditorView(document: $0, settings: settings) }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button("Neues Notizbuch") { _ = store.create(title: "Unbenannt") }

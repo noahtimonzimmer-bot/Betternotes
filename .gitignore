@@ -3,3 +3,6 @@ xcuserdata/
 DerivedData/
 .build/
 .DS_Store
+*.goodnotes
+samples/
+__pycache__/
