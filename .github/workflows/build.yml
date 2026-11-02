@@ -20,16 +20,16 @@ jobs:
         run: |
           set +e
           xcodebuild -scheme Betternotes -destination 'generic/platform=iOS' \
-            -configuration Release -derivedDataPath build \
+            -configuration Release -derivedDataPath "$RUNNER_TEMP/dd" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build > build.log 2>&1
           status=$?
-          grep -E "error:|BUILD (SUCCEEDED|FAILED)" build.log | sort -u | head -150
+          grep -E "error:|BUILD (SUCCEEDED|FAILED)" build.log | sort -u | head -200
           exit $status
 
       - name: Package unsigned IPA (sign with AltStore/Sideloadly)
         working-directory: Betternotes.swiftpm
         run: |
-          app=$(find build/Build/Products -name "*.app" -maxdepth 3 | head -1)
+          app=$(find "$RUNNER_TEMP/dd/Build/Products" -maxdepth 3 -name "*.app" | head -1)
           mkdir -p Payload && cp -R "$app" Payload/
           zip -qr Betternotes-unsigned.ipa Payload
 
