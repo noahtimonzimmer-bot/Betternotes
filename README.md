@@ -4,10 +4,10 @@ Native iPad-Notizapp (SwiftUI + PencilKit). Handschrift auf PDFs, die Striche bl
 
 ## Funktionen
 - **Bibliothek wie OneNote**: links Ordner (verschachtelt) und Notizbücher, per Kontextmenü oder Drag & Drop verschieben, umbenennen, löschen; Suche nach Titeln
-- **GoodNotes-Import (`.goodnotes`)**: Seiten, PDF-Hintergründe, Striche (alle 3 bekannten Formate), Textmarker, Lasso-Verschiebungen, Whiteboards → bearbeitbare PencilKit-Striche. Format: `docs/GOODNOTES_FORMAT.md`
+- **GoodNotes-Import (`.goodnotes`)**: Seiten, PDF-Hintergründe, Striche (alle 3 bekannten Formate), Textmarker, Lasso-Verschiebungen, Whiteboards, Bilder, Textfelder → bearbeitbare PencilKit-Striche bzw. Objekte. Format: `docs/GOODNOTES_FORMAT.md`
 - **PDF-Import**, neue Notizbücher mit Vorlage (leer, liniert, kariert, gepunktet)
 - **Editor**: Zoom (zwei Finger), flüssig auch bei 100+ Seiten, Seitenübersicht links, Seite hinzufügen/duplizieren/löschen/verschieben, Vorlage pro Seite, „Gehe zu Seite“, Rückgängig/Wiederholen
-- **Immer Schreibrand** links und rechts jeder Seite (wie OneNote), Breite einstellbar
+- **Endloser Schreibrand**: links und rechts jeder Seite Platz zum Schreiben; schreibst du nahe am Rand, wächst er automatisch weiter (Seite scrollt dann seitlich). Einstellbar, ob Randnotizen im PDF-Export erscheinen oder nur in der App bleiben
 - **Werkzeuge**: Füller, Bleistift, Textmarker, Radierer (ganze Striche oder pixelweise), Formen (Linie, Rechteck, Ellipse), Lasso, **Kamera-Lasso** (Bereich umkreisen → Bild direkt in der Zwischenablage), Text & Objekte (Textfelder, Bilder verschieben/skalieren)
 - **Apple Pencil**: Doppeltippen und Drücken (Pencil Pro) frei belegbar – Werkzeugauswahl an der Stiftspitze, Radierer für einen Zug, Radierer ein/aus, vorheriges Werkzeug, Lasso, Kamera-Lasso
 - **Gerade Linien** werden automatisch begradigt (abschaltbar)
@@ -17,8 +17,8 @@ Native iPad-Notizapp (SwiftUI + PencilKit). Handschrift auf PDFs, die Striche bl
 - **OneDrive-Synchronisation** in beide Richtungen
 
 ## Noch offen
-- GoodNotes: Textfelder, Formen, Bilder aus GoodNotes übernehmen; Export zurück nach `.goodnotes`
-- Handschrifterkennung/Suche in Handschrift, Ebenen, Lesezeichen/Gliederung, Audioaufnahme
+- GoodNotes: Formen übernehmen (in den Beispieldateien alle gelöscht, daher ungetestet); Export zurück nach `.goodnotes`
+- Handschrifterkennung/Suche in Handschrift, Ebenen, Audioaufnahme
 
 ## Werkzeuge zur Analyse
 ```bash
