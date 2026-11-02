@@ -26,6 +26,11 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
     private(set) var currentIndex = 0
     private var shiftX: CGFloat = 0        // how far pages were moved right to fit left margins
     private var didCenter = false
+    /// Extra writing space (in page widths) added on both sides while scrolling outwards –
+    /// the area around the pages never ends.
+    private(set) var extraLeft: CGFloat = 0
+    private(set) var extraRight: CGFloat = 0
+    private var growing = false
     private let spacing: CGFloat = 20
 
     override init(frame: CGRect) {
@@ -173,7 +178,27 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
         for v in views.values { v.setZoom(scale) }
     }
 
-    func scrollViewDidScroll(_ scrollView: UIScrollView) { updateVisiblePages() }
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        updateVisiblePages()
+        growIfNearHorizontalEdge()
+    }
+
+    /// Near the left/right end of the content: add another page width of space on that side.
+    private func growIfNearHorizontalEdge() {
+        guard !growing, !pages.isEmpty, bounds.width > 0, contentSize.width > bounds.width else { return }
+        let nearRight = contentOffset.x + bounds.width > contentSize.width - bounds.width * 0.6
+        let nearLeft = contentOffset.x < bounds.width * 0.6 - contentInset.left
+        guard nearRight || nearLeft else { return }
+        growing = true
+        if nearRight { extraRight += 1 }
+        if nearLeft { extraLeft += 1 }
+        let current = pages
+        signature = []            // force relayout with the bigger margins
+        setPages(current)
+        for p in pages { if let v = views[p.id] { provider?.configure(v, page: p) } }
+        layoutIfNeeded()
+        DispatchQueue.main.async { [weak self] in self?.growing = false }
+    }
 
     // Fingers on movable items (text boxes, images) move the item instead of scrolling.
     override func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {

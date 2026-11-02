@@ -278,7 +278,9 @@ struct DocumentCanvas: UIViewRepresentable {
         /// start (more if you write further out); the paper stays centred.
         func margins(for page: NotePage) -> (left: CGFloat, right: CGFloat) {
             let d = page.isBoard ? defaultMargin(for: page) : max(defaultMargin(for: page), page.width * 1.5)
-            return (max(d, page.marginLeft.map { CGFloat($0) } ?? d), max(d, page.marginRight.map { CGFloat($0) } ?? d))
+            let l = d + (view?.extraLeft ?? 0) * page.width
+            let r = d + (view?.extraRight ?? 0) * page.width
+            return (max(l, page.marginLeft.map { CGFloat($0) } ?? l), max(r, page.marginRight.map { CGFloat($0) } ?? r))
         }
 
         func makePageView(for page: NotePage) -> PageCanvasView {
