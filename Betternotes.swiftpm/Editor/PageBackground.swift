@@ -45,9 +45,10 @@ enum PageBackground {
         }
     }
 
-    static let dotStep: CGFloat = 40
-    static let dotRadius: CGFloat = 1.4
-    static let dotColor = UIColor(white: 0.45, alpha: 0.32)
+    // Like GoodNotes' dotted paper: small mid-grey dots on a tight grid.
+    static let dotStep: CGFloat = 30
+    static let dotRadius: CGFloat = 1.1
+    static let dotColor = UIColor(white: 0.62, alpha: 0.9)
     /// Neutral background around the pages.
     static let surfaceColor = UIColor(white: 0.955, alpha: 1)
 
@@ -98,7 +99,7 @@ enum PageBackground {
         case .dotted:
             // subtle grey dots, same grid as the dotted writing area beside the page
             c.setFillColor(dotColor.cgColor)
-            let step = dotStep * unit, r = max(0.8, dotRadius * unit)
+            let step = dotStep * unit, r = max(0.7, dotRadius * unit)
             var y = step
             while y < size.height {
                 var x = step

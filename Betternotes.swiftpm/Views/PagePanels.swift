@@ -162,11 +162,11 @@ struct TemplatePreview: View {
                 var y: CGFloat = 6
                 while y < size.height { ctx.stroke(Path { $0.move(to: CGPoint(x: 0, y: y)); $0.addLine(to: CGPoint(x: size.width, y: y)) }, with: .color(line), lineWidth: 0.4); y += 6 }
             case .dotted:
-                var y: CGFloat = 6
+                var y: CGFloat = 4.5
                 while y < size.height {
-                    var x: CGFloat = 6
-                    while x < size.width { ctx.fill(Path(ellipseIn: CGRect(x: x - 0.5, y: y - 0.5, width: 1, height: 1)), with: .color(Color(white: 0.45, opacity: 0.4))); x += 6 }
-                    y += 6
+                    var x: CGFloat = 4.5
+                    while x < size.width { ctx.fill(Path(ellipseIn: CGRect(x: x - 0.45, y: y - 0.45, width: 0.9, height: 0.9)), with: .color(Color(white: 0.62, opacity: 0.9))); x += 4.5 }
+                    y += 4.5
                 }
             }
         }
