@@ -1,5 +1,7 @@
 import Foundation
+import PDFKit
 import PencilKit
+import UIKit
 
 @MainActor
 final class DocumentStore: ObservableObject {
@@ -87,6 +89,46 @@ final class DocumentStore: ObservableObject {
         let copy = original.duplicated()
         saveDrawing(drawing(for: original, in: doc, includeHidden: true), for: copy, in: doc)
         insertPage(copy, at: index + 1, in: id)
+    }
+
+    /// Removes ink (all layers), text boxes and images; keeps the paper.
+    func clearPage(at index: Int, in id: UUID) {
+        guard let doc = document(id), doc.pages.indices.contains(index) else { return }
+        var p = doc.pages[index]
+        for layer in p.allLayers { saveLayerDrawing(PKDrawing(), layer: layer.id, in: doc) }
+        p.textBoxes = []
+        p.images = []
+        updatePage(p, in: id)
+    }
+
+    /// Inserts every page of a PDF at `index`.
+    func insertPDFPages(_ url: URL, at index: Int, in id: UUID) throws -> Int {
+        guard let doc = document(id), let pdf = PDFDocument(url: url) else { throw CocoaError(.fileReadCorruptFile) }
+        let name = "\(UUID().uuidString).pdf"
+        try FileManager.default.copyItem(at: url, to: attachmentURL(name, in: doc))
+        let k = 1091.64 / 595.28
+        let pages: [NotePage] = (0..<pdf.pageCount).map { i in
+            let box = pdf.page(at: i)?.bounds(for: .mediaBox) ?? CGRect(x: 0, y: 0, width: 595.28, height: 841.89)
+            return NotePage(pdfAttachment: name, pdfPageIndex: i, width: box.width * k, height: box.height * k)
+        }
+        update(id) { $0.pages.insert(contentsOf: pages, at: min(max(index, 0), $0.pages.count)) }
+        return pages.count
+    }
+
+    /// One new page per image (scans, photos); the image fills the page.
+    func insertImagePages(_ images: [UIImage], at index: Int, in id: UUID) {
+        guard let doc = document(id) else { return }
+        var pages: [NotePage] = []
+        for img in images {
+            guard let data = img.jpegData(compressionQuality: 0.85) else { continue }
+            let name = addAttachment(data, ext: "jpg", to: doc)
+            let w = 1091.64
+            let h = w * Double(img.size.height / max(img.size.width, 1))
+            var page = NotePage(width: w, height: h)
+            page.images = [ImageItem(frame: CGRect(x: 0, y: 0, width: w, height: h), file: name)]
+            pages.append(page)
+        }
+        update(id) { $0.pages.insert(contentsOf: pages, at: min(max(index, 0), $0.pages.count)) }
     }
 
     func deletePage(at index: Int, in id: UUID) {

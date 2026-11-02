@@ -8,29 +8,43 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Apple Pencil") {
-                Picker("Doppeltippen", selection: $settings.doubleTap) {
+            Section {
+                Picker(selection: $settings.doubleTap) {
                     ForEach(PencilAction.allCases) { Text($0.label).tag($0) }
-                }
-                Picker("Drücken (Pencil Pro)", selection: $settings.squeeze) {
+                } label: { Label("Doppeltippen", systemImage: "hand.tap") }
+                Picker(selection: $settings.squeeze) {
                     ForEach(PencilAction.allCases) { Text($0.label).tag($0) }
+                } label: { Label("Drücken (Pencil Pro)", systemImage: "hand.pinch") }
+                Toggle(isOn: $settings.onlyPencilDraws) {
+                    Label("Nur mit Pencil zeichnen", systemImage: "pencil.tip")
                 }
-                Toggle("Nur mit Pencil zeichnen (Finger scrollt)", isOn: $settings.onlyPencilDraws)
+            } header: {
+                Text("Apple Pencil")
+            } footer: {
+                Text("Mit „Nur mit Pencil zeichnen“ scrollt und zoomt der Finger, lange drücken mit dem Finger fügt ein.")
             }
             Section("Schreiben") {
-                Toggle("Formen erkennen: zeichnen und kurz halten", isOn: $settings.holdToShape)
-                Toggle("Gerade Linien automatisch begradigen", isOn: $settings.straightenLines)
-                Toggle("Radierer löscht ganze Striche", isOn: $settings.eraserWholeStroke)
+                Toggle(isOn: $settings.holdToShape) {
+                    Label("Formen: zeichnen und kurz halten", systemImage: "square.on.circle")
+                }
+                Toggle(isOn: $settings.straightenLines) {
+                    Label("Gerade Linien begradigen", systemImage: "line.diagonal")
+                }
+                Toggle(isOn: $settings.eraserWholeStroke) {
+                    Label("Radierer löscht ganze Striche", systemImage: "eraser")
+                }
             }
             Section {
-                Toggle("Randnotizen im PDF-Export", isOn: $settings.exportMarginNotes)
-                Picker("Start-Schreibrand neben der Seite", selection: $settings.marginRatio) {
+                Toggle(isOn: $settings.exportMarginNotes) {
+                    Label("Randnotizen im PDF-Export", systemImage: "arrow.left.and.right.square")
+                }
+                Picker(selection: $settings.marginRatio) {
                     Text("Schmal").tag(0.15)
                     Text("Mittel").tag(0.25)
                     Text("Breit").tag(0.4)
-                }
+                } label: { Label("Seitenbreite auf dem Bildschirm", systemImage: "rectangle.portrait") }
             } footer: {
-                Text("Schreibst du nahe am Rand, wächst der Platz automatisch weiter – endlos. Ohne „Randnotizen im PDF-Export“ bleiben sie nur in Betternotes sichtbar; das PDF hat dann die normale Seitengröße.")
+                Text("Neben jeder Seite ist unbegrenzt Platz. „Seitenbreite“ legt fest, wie groß das Papier beim Öffnen erscheint. Ohne „Randnotizen im PDF-Export“ bleiben Randnotizen nur in Betternotes.")
             }
             Section {
                 if OneDriveSync.clientID.hasPrefix("REPLACE") {

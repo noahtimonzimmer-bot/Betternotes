@@ -101,6 +101,7 @@ struct NotePage: Identifiable, Codable, Hashable {
     var layers: [PageLayer] = []
     /// Layer the pencil writes into; nil = top layer.
     var activeLayer: UUID?
+    var isFavorite = false
 
     var size: CGSize { CGSize(width: width, height: height) }
 
@@ -130,6 +131,7 @@ struct NotePage: Identifiable, Codable, Hashable {
         marginRight = try c.decodeIfPresent(Double.self, forKey: .marginRight)
         layers = try c.decodeIfPresent([PageLayer].self, forKey: .layers) ?? []
         activeLayer = try c.decodeIfPresent(UUID.self, forKey: .activeLayer)
+        isFavorite = try c.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
     }
 
     var allLayers: [PageLayer] { layers.isEmpty ? [PageLayer(id: id, name: "Ebene 1")] : layers }

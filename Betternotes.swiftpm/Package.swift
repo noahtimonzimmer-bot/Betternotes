@@ -28,7 +28,8 @@ let package = Package(
                 .landscapeLeft
             ],
             capabilities: [
-                .microphone(purposeString: "Für Audioaufnahmen in deinen Notizen.")
+                .microphone(purposeString: "Für Audioaufnahmen in deinen Notizen."),
+                .camera(purposeString: "Zum Scannen von Dokumenten und Fotografieren in deine Notizen.")
             ]
         )
     ],
