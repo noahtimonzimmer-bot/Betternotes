@@ -133,7 +133,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         canvas.addGestureRecognizer(holdObserver)
         holdObserver.onHold = { [weak self] pts in self?.snapWhileHolding(pts) }
         holdObserver.onMoveAfterHold = { [weak self] p in self?.adjustShape(to: p) }
-        holdObserver.onEndAfterHold = { [weak self] in self?.adjusting = nil }
+        holdObserver.onEndAfterHold = { [weak self] in self?.finishSnap() }
 
         cameraGesture.isEnabled = false
         cameraGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
@@ -299,8 +299,12 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         let box = TextBox(frame: CGRect(x: p.x, y: p.y - 20, width: min(600, page.size.width - p.x + marginRight), height: 60))
         page.textBoxes.append(box)
         syncItems()
-        textViews[box.id]?.becomeFirstResponder()
         commitPage()
+        // after layout, so the text view has its frame and the keyboard can attach
+        DispatchQueue.main.async { [weak self] in
+            self?.layoutItems()
+            self?.textViews[box.id]?.becomeFirstResponder()
+        }
     }
 
     @objc private func moveItem(_ g: UIPanGestureRecognizer) {
@@ -415,7 +419,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
                           opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
         }
         let rawStroke = PKStroke(ink: ink.ink, path: PKStrokePath(controlPoints: raw, creationDate: Date()))
-        guard let shape = ShapeRecognizer.shape(from: rawStroke) else { return }
+        guard ShapeRecognizer.shape(from: rawStroke) != nil else { return }
         let base = strokeCountAtToolStart
         snappedDuringHold = true
         // Toggling the drawing gesture ends the stroke in progress.
@@ -424,13 +428,51 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             var d = self.canvas.drawing
-            // PencilKit may have committed the partial stroke; replace it.
-            if d.strokes.count > base { d.strokes.removeLast(d.strokes.count - base) }
+            // PencilKit usually commits the partial stroke: use it (real width and pressure) and remove it.
+            var source = rawStroke
+            if d.strokes.count > base {
+                source = d.strokes[base]
+                d.strokes.removeLast(d.strokes.count - base)
+            } else if let similar = d.strokes.last(where: { $0.ink.inkType == ink.inkType }) {
+                source = Self.restyled(rawStroke, like: similar)
+            }
+            guard let shape = ShapeRecognizer.shape(from: source) ?? ShapeRecognizer.shape(from: rawStroke) else {
+                self.snappedDuringHold = false
+                return
+            }
             d.strokes.append(shape)
             self.canvas.drawing = d
             let b = shape.renderBounds
             self.adjusting = (d.strokes.count - 1, shape, CGPoint(x: b.midX, y: b.midY), pts.last ?? .zero)
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+    }
+
+    /// Raw points with the point size/force/opacity of an existing stroke of the same pen.
+    private static func restyled(_ raw: PKStroke, like model: PKStroke) -> PKStroke {
+        let sizes = model.path.map(\.size.width).sorted()
+        let w = sizes.isEmpty ? raw.path.first?.size.width ?? 2 : sizes[sizes.count / 2]
+        let ref = model.path.first
+        let pts = raw.path.enumerated().map { i, p in
+            PKStrokePoint(location: p.location, timeOffset: TimeInterval(i) * 0.005, size: CGSize(width: w, height: w),
+                          opacity: ref?.opacity ?? 1, force: ref?.force ?? 1,
+                          azimuth: ref?.azimuth ?? 0, altitude: ref?.altitude ?? .pi / 2)
+        }
+        return PKStroke(ink: raw.ink, path: PKStrokePath(controlPoints: pts, creationDate: Date()))
+    }
+
+    /// Pencil lifted after a snap: make sure exactly the shape remains (PencilKit can deliver the
+    /// cancelled stroke late, which could duplicate or replace it), then save.
+    private func finishSnap() {
+        guard let a = adjusting else { return }
+        adjusting = nil
+        let finalShape: PKStroke = canvas.drawing.strokes.indices.contains(a.index) ? canvas.drawing.strokes[a.index] : a.stroke
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            guard let self else { return }
+            var d = self.canvas.drawing
+            if d.strokes.count > a.index + 1 { d.strokes.removeLast(d.strokes.count - a.index - 1) }
+            if d.strokes.count <= a.index { d.strokes.append(finalShape) } else { d.strokes[a.index] = finalShape }
+            self.canvas.drawing = d   // saved via drawingDidChange
         }
     }
 

@@ -136,29 +136,15 @@ struct EditorView: View {
             Button { model.undoManager()?.redo() } label: { Image(systemName: "arrow.uturn.forward") }
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
-            Button {
-                if recorder.isRecording {
-                    if let rec = recorder.stop() { store.update(document.id) { $0.recordings.append(rec) } }
-                    model.show("Aufnahme gespeichert")
-                } else {
-                    Task {
-                        if await recorder.start(in: doc, store: store) { model.show("Aufnahme läuft …") }
-                        else { model.show("Mikrofon nicht erlaubt (Einstellungen › Betternotes)") }
-                    }
+            if recorder.isRecording {
+                // only visible while recording: tap to stop
+                Button { toggleRecording() } label: {
+                    Label(Duration.seconds(recorder.elapsed).formatted(.time(pattern: .minuteSecond)),
+                          systemImage: "record.circle")
+                        .labelStyle(.titleAndIcon)
+                        .foregroundStyle(.red)
                 }
-            } label: {
-                Image(systemName: recorder.isRecording ? "stop.circle.fill" : "mic")
-                    .foregroundStyle(recorder.isRecording ? .red : .accentColor)
             }
-            .contextMenu { Button("Aufnahmen anzeigen") { showRecordings = true } }
-            Button { showLayers = true } label: { Image(systemName: "square.3.layers.3d") }
-                .popover(isPresented: $showLayers) {
-                    LayersView(docID: document.id, pageIndex: model.currentPage)
-                }
-            Button { showRecordings = true } label: { Image(systemName: "waveform") }
-                .popover(isPresented: $showRecordings) {
-                    RecordingsView(recorder: recorder, doc: doc)
-                }
             Menu {
                 Menu("Neue Seite danach") {
                     ForEach(PageTemplate.allCases) { t in
@@ -187,10 +173,40 @@ struct EditorView: View {
                 Button { tools.select(.text) } label: { Label("Textfeld", systemImage: "textformat") }
             } label: { Image(systemName: "photo.badge.plus") }
             Button { showSearch = true } label: { Image(systemName: "magnifyingglass") }
-            Button {
-                do { exportURL = try PDFExporter.export(doc, store: store, includeMarginNotes: settings.exportMarginNotes) }
-                catch { model.show("Export fehlgeschlagen: \(error.localizedDescription)") }
-            } label: { Image(systemName: "square.and.arrow.up") }
+            Menu {
+                Button { showLayers = true } label: { Label("Ebenen", systemImage: "square.3.layers.3d") }
+                Section("Audio") {
+                    Button { toggleRecording() } label: {
+                        Label(recorder.isRecording ? "Aufnahme stoppen" : "Aufnahme starten",
+                              systemImage: recorder.isRecording ? "stop.circle" : "mic")
+                    }
+                    Button { showRecordings = true } label: { Label("Aufnahmen (\(doc.recordings.count))", systemImage: "waveform") }
+                }
+                Section {
+                    Button {
+                        do { exportURL = try PDFExporter.export(doc, store: store, includeMarginNotes: settings.exportMarginNotes) }
+                        catch { model.show("Export fehlgeschlagen: \(error.localizedDescription)") }
+                    } label: { Label("Als PDF teilen", systemImage: "square.and.arrow.up") }
+                }
+            } label: { Image(systemName: "ellipsis.circle") }
+            .popover(isPresented: $showLayers) {
+                LayersView(docID: document.id, pageIndex: model.currentPage)
+            }
+            .popover(isPresented: $showRecordings) {
+                RecordingsView(recorder: recorder, doc: doc)
+            }
+        }
+    }
+
+    private func toggleRecording() {
+        if recorder.isRecording {
+            if let rec = recorder.stop() { store.update(document.id) { $0.recordings.append(rec) } }
+            model.show("Aufnahme gespeichert")
+        } else {
+            Task {
+                if await recorder.start(in: doc, store: store) { model.show("Aufnahme läuft …") }
+                else { model.show("Mikrofon nicht erlaubt (Einstellungen › Betternotes)") }
+            }
         }
     }
 
