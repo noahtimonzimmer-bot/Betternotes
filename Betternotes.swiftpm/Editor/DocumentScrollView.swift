@@ -24,6 +24,8 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
     private var laidOutWidth: CGFloat = 0
     private var signature: [String] = []
     private(set) var currentIndex = 0
+    private var shiftX: CGFloat = 0        // how far pages were moved right to fit left margins
+    private var didCenter = false
     private let spacing: CGFloat = 20
 
     override init(frame: CGRect) {
@@ -90,13 +92,13 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
 
     private func relayout() {
         // Keep zoom and position when pages change size (e.g. the margin grows while writing).
-        let zoom = zoomScale, offset = contentOffset
+        let zoom = zoomScale
+        var offset = contentOffset
         if zoom != 1 { setZoomScale(1, animated: false) }
         defer {
-            if zoom != 1 {
-                setZoomScale(zoom, animated: false)
-                contentOffset = offset
-            }
+            if zoom != 1 { setZoomScale(zoom, animated: false) }
+            contentOffset = CGPoint(x: min(max(offset.x, -contentInset.left), max(0, contentSize.width - bounds.width)),
+                                    y: offset.y)
         }
         laidOutWidth = bounds.width
         let side: CGFloat = 8
@@ -113,7 +115,17 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
             return f
         }
         let minX = min(side, frames.map(\.minX).min() ?? side)
-        frames = frames.map { $0.offsetBy(dx: side - minX, dy: 0) }
+        let shift = side - minX
+        frames = frames.map { $0.offsetBy(dx: shift, dy: 0) }
+        if didCenter {
+            // margin grew on the left: keep the view where it was instead of jumping
+            offset.x += (shift - shiftX) * zoom
+        } else if !pages.isEmpty {
+            // start with the paper of the first page centred
+            offset.x = max(0, shift + side + (bounds.width - 2 * side) / 2 - bounds.width / 2)
+            didCenter = true
+        }
+        shiftX = shift
         let maxX = (frames.map(\.maxX).max() ?? bounds.width) + side
         content.frame = CGRect(x: 0, y: 0, width: max(bounds.width, maxX), height: y)
         contentSize = content.frame.size

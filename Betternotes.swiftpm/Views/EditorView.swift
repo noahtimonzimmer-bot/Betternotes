@@ -58,15 +58,26 @@ struct EditorView: View {
             }
             ZStack(alignment: .top) {
                 DocumentCanvas(docID: document.id, model: model)
-                if let p = tools.paletteLocation {
-                    ToolPaletteView()
-                        .position(x: p.x, y: max(90, p.y - 90))
-                        .transition(.scale.combined(with: .opacity))
+                GeometryReader { geo in
+                    FloatingToolBar(area: geo.size)
+                    if let p = tools.paletteLocation {
+                        // tap anywhere else closes the ring
+                        Color.black.opacity(0.001)
+                            .onTapGesture { tools.paletteLocation = nil }
+                        let r = ToolPaletteView.radius + 30
+                        ToolPaletteView()
+                            .position(x: min(max(p.x, r), geo.size.width - r),
+                                      y: min(max(p.y, r), geo.size.height - 60))
+                            .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    }
                 }
                 if let t = model.toast {
-                    Text(t).padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .padding(.top, 10)
+                    Label(t, systemImage: "checkmark.circle.fill")
+                        .font(.callout.weight(.medium))
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(.regularMaterial, in: Capsule())
+                        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+                        .padding(.top, 70)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 Text("\(model.currentPage + 1) / \(doc.pages.count)")
@@ -81,14 +92,6 @@ struct EditorView: View {
         .animation(.spring(duration: 0.25), value: tools.paletteLocation)
         .animation(.easeInOut(duration: 0.2), value: model.toast)
         .animation(.easeInOut(duration: 0.2), value: showThumbnails)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                ToolBar().padding(.horizontal, 12).padding(.vertical, 6)
-            }
-            .frame(maxWidth: .infinity)
-            .background(.bar)
-            .overlay(alignment: .bottom) { Divider() }
-        }
         .environmentObject(tools)
         .navigationTitle(doc.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -264,8 +267,10 @@ struct DocumentCanvas: UIViewRepresentable {
 
         func defaultMargin(for page: NotePage) -> CGFloat { page.isBoard ? 0 : settings.marginRatio * page.width }
 
+        /// Space around each page is effectively endless: 1.5 page widths on both sides from the
+        /// start (more if you write further out); the paper stays centred.
         func margins(for page: NotePage) -> (left: CGFloat, right: CGFloat) {
-            let d = defaultMargin(for: page)
+            let d = page.isBoard ? defaultMargin(for: page) : max(defaultMargin(for: page), page.width * 1.5)
             return (max(d, page.marginLeft.map { CGFloat($0) } ?? d), max(d, page.marginRight.map { CGFloat($0) } ?? d))
         }
 
@@ -288,6 +293,7 @@ struct DocumentCanvas: UIViewRepresentable {
             v.onPageChange = { p in store.updatePage(p, in: docID) }
             v.onEndUsingTool = { [weak tools] in tools?.didEndUsingTool() }
             let pageID = page.id
+            v.addAttachment = { data in store.addAttachment(data, ext: "png", to: doc) }
             v.onRequestCrop = { [weak model] item in model?.cropRequest = CropRequest(pageID: pageID, itemID: item) }
             v.onCapture = { [weak model] img in
                 UIPasteboard.general.image = img
@@ -316,68 +322,156 @@ struct DocumentCanvas: UIViewRepresentable {
 
 // MARK: - Toolbar & palette
 
+/// Floating tool bar (drag the grip to move it anywhere; position is remembered).
 struct ToolBar: View {
     @EnvironmentObject var tools: ToolController
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
+            Image(systemName: "line.3.horizontal")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 36)
+                .contentShape(Rectangle())
+                .accessibilityLabel("Leiste verschieben")
             ForEach(ToolController.Kind.allCases) { k in
                 Button { tools.select(k) } label: {
                     Image(systemName: k.symbol)
-                        .frame(width: 30, height: 30)
-                        .background(tools.kind == k ? Color.accentColor.opacity(0.22) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(tools.kind == k ? Color.white : Color.primary)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(tools.kind == k ? toolTint(k) : Color.clear))
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel(k.label)
             }
-            Divider().frame(height: 22)
+            Capsule().fill(Color.secondary.opacity(0.3)).frame(width: 1, height: 24).padding(.horizontal, 4)
             ForEach(ToolController.widths, id: \.self) { w in
                 Button { tools.width = w } label: {
-                    Capsule().frame(width: 18, height: w * 1.4)
-                        .frame(width: 26, height: 30)
-                        .background(tools.width == w ? Color.accentColor.opacity(0.22) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                    Circle().fill(Color.primary)
+                        .frame(width: 4 + w * 2.2, height: 4 + w * 2.2)
+                        .frame(width: 30, height: 36)
+                        .background(Circle().stroke(Color.accentColor, lineWidth: tools.width == w ? 2 : 0).frame(width: 28, height: 28))
                 }
+                .buttonStyle(.plain)
             }
-            Divider().frame(height: 22)
+            Capsule().fill(Color.secondary.opacity(0.3)).frame(width: 1, height: 24).padding(.horizontal, 4)
             ForEach(ToolController.palette, id: \.self) { c in
-                Circle().fill(Color(uiColor: c)).frame(width: 20, height: 20)
-                    .overlay(Circle().stroke(Color.primary.opacity(0.7), lineWidth: tools.currentColor == c ? 2 : 0).padding(-3))
+                Circle().fill(Color(uiColor: c)).frame(width: 22, height: 22)
+                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                    .shadow(color: .black.opacity(0.2), radius: 1)
+                    .padding(4)
+                    .overlay(Circle().stroke(Color.primary.opacity(0.6), lineWidth: tools.currentColor == c ? 2 : 0))
                     .onTapGesture { tools.setColor(c) }
             }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().stroke(Color.primary.opacity(0.08)))
+        .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
+    }
+
+    private func toolTint(_ k: ToolController.Kind) -> Color {
+        k.usesColor ? Color(uiColor: k == .marker ? tools.markerColor : tools.color).opacity(0.95) : Color.accentColor
+    }
+}
+
+/// Draggable container for the tool bar.
+struct FloatingToolBar: View {
+    @AppStorage("toolbar.x") private var fx = 0.5
+    @AppStorage("toolbar.y") private var fy = 0.0
+    @State private var drag: CGSize = .zero
+    let area: CGSize
+
+    var body: some View {
+        ToolBar()
+            .fixedSize()
+            .background(GeometryReader { g in Color.clear.preference(key: BarSize.self, value: g.size) })
+            .modifier(Positioned(fx: fx, fy: fy, drag: drag, area: area))
+            .gesture(DragGesture(minimumDistance: 4)
+                .onChanged { drag = $0.translation }
+                .onEnded { v in
+                    fx = min(max(fx + v.translation.width / max(area.width, 1), 0), 1)
+                    fy = min(max(fy + v.translation.height / max(area.height, 1), 0), 1)
+                    drag = .zero
+                })
+    }
+
+    private struct BarSize: PreferenceKey {
+        static var defaultValue: CGSize = .zero
+        static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+    }
+
+    private struct Positioned: ViewModifier {
+        let fx: Double, fy: Double, drag: CGSize, area: CGSize
+        @State private var size: CGSize = CGSize(width: 600, height: 44)
+        func body(content: Content) -> some View {
+            let w = min(size.width, area.width - 16)
+            let x = min(max(fx * area.width + drag.width, w / 2 + 8), area.width - w / 2 - 8)
+            let y = min(max(fy * area.height + drag.height, size.height / 2 + 8), area.height - size.height / 2 - 8)
+            content
+                .onPreferenceChange(BarSize.self) { size = $0 }
+                .position(x: x, y: y)
         }
     }
 }
 
-/// Appears at the pencil tip on squeeze (Apple Pencil Pro).
+/// Appears around the pencil tip on squeeze (Apple Pencil Pro): tools on the inner arc,
+/// colours on the outer arc, stroke widths below the tip.
 struct ToolPaletteView: View {
     @EnvironmentObject var tools: ToolController
+    static let radius: CGFloat = 150
 
     var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 10) {
-                ForEach(ToolController.Kind.allCases) { k in
-                    Button { tools.select(k); tools.paletteLocation = nil } label: {
-                        Image(systemName: k.symbol).font(.title3).frame(width: 38, height: 38)
-                            .background(tools.kind == k ? Color.accentColor.opacity(0.25) : .clear, in: Circle())
-                    }
+        let kinds = ToolController.Kind.allCases
+        let colors = ToolController.palette
+        ZStack {
+            Circle().fill(.ultraThinMaterial).frame(width: 2 * Self.radius + 40, height: 2 * Self.radius + 40)
+                .mask(Circle().stroke(lineWidth: 120).frame(width: 2 * Self.radius - 20, height: 2 * Self.radius - 20))
+                .shadow(color: .black.opacity(0.15), radius: 10)
+            ForEach(Array(kinds.enumerated()), id: \.element) { i, k in
+                let a = arcAngle(i, of: kinds.count, from: -165, to: -15)
+                Button { tools.select(k); tools.paletteLocation = nil } label: {
+                    Image(systemName: k.symbol)
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(tools.kind == k ? Color.white : Color.primary)
+                        .frame(width: 44, height: 44)
+                        .background(Circle().fill(tools.kind == k ? Color.accentColor : Color(.systemBackground)))
+                        .shadow(color: .black.opacity(0.15), radius: 2)
                 }
+                .buttonStyle(.plain)
+                .offset(x: 95 * cos(a), y: 95 * sin(a))
             }
-            HStack(spacing: 12) {
-                ForEach(ToolController.palette, id: \.self) { c in
-                    Circle().fill(Color(uiColor: c)).frame(width: 28, height: 28)
-                        .overlay(Circle().stroke(Color.primary.opacity(0.7), lineWidth: tools.currentColor == c ? 2 : 0).padding(-3))
-                        .onTapGesture { tools.setColor(c); tools.paletteLocation = nil }
+            ForEach(Array(colors.enumerated()), id: \.offset) { i, c in
+                let a = arcAngle(i, of: colors.count, from: -150, to: -30)
+                Circle().fill(Color(uiColor: c)).frame(width: 34, height: 34)
+                    .overlay(Circle().stroke(Color.white, lineWidth: 3))
+                    .overlay(Circle().stroke(Color.accentColor, lineWidth: tools.currentColor == c ? 3 : 0).padding(-4))
+                    .shadow(color: .black.opacity(0.2), radius: 2)
+                    .offset(x: Self.radius * cos(a), y: Self.radius * sin(a))
+                    .onTapGesture { tools.setColor(c); tools.paletteLocation = nil }
+            }
+            ForEach(Array(ToolController.widths.enumerated()), id: \.offset) { i, w in
+                let a = arcAngle(i, of: ToolController.widths.count, from: 60, to: 120)
+                Button { tools.width = w; tools.paletteLocation = nil } label: {
+                    Circle().fill(Color.primary).frame(width: 4 + w * 2.4, height: 4 + w * 2.4)
+                        .frame(width: 40, height: 40)
+                        .background(Circle().fill(Color(.systemBackground)))
+                        .overlay(Circle().stroke(Color.accentColor, lineWidth: tools.width == w ? 2 : 0))
+                        .shadow(color: .black.opacity(0.15), radius: 2)
                 }
+                .buttonStyle(.plain)
+                .offset(x: 95 * cos(a), y: 95 * sin(a))
             }
-            HStack {
-                Image(systemName: "scribble").font(.caption)
-                Slider(value: $tools.width, in: 0.8...10)
-                Image(systemName: "scribble").font(.title3)
-            }
-            .frame(width: 260)
+            Circle().stroke(Color.accentColor.opacity(0.6), lineWidth: 2).frame(width: 14, height: 14)
         }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
-        .shadow(radius: 10)
+        .frame(width: 2 * Self.radius + 60, height: 2 * Self.radius + 60)
+    }
+
+    private func arcAngle(_ i: Int, of n: Int, from: Double, to: Double) -> CGFloat {
+        let t = n > 1 ? Double(i) / Double(n - 1) : 0.5
+        return CGFloat((from + (to - from) * t) * .pi / 180)
     }
 }
 

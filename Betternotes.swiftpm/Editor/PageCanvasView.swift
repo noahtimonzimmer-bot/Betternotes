@@ -5,7 +5,9 @@ import UIKit
 /// images and text boxes, and a PencilKit canvas spanning everything. Drawings and items are
 /// kept in page coordinates (x < 0 or x > page width = margin), independent of screen scale.
 @MainActor
-final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UIContextMenuInteractionDelegate {
+final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UIContextMenuInteractionDelegate,
+                            UIEditMenuInteractionDelegate {
+    static let strokesPasteboardType = "com.betternotes.strokes"
     enum Mode { case ink, shape, objects, camera, lasso }
 
     let canvas = PKCanvasView()
@@ -47,6 +49,11 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
 
     var onDrawingChange: ((UUID, PKDrawing) -> Void)?
     var onRequestCrop: ((UUID) -> Void)?
+    /// Stores pasted image data as an attachment, returns the file name.
+    var addAttachment: ((Data) -> String)?
+    private lazy var pasteMenu = UIEditMenuInteraction(delegate: self)
+    private lazy var pressGesture = UILongPressGestureRecognizer(target: self, action: #selector(longPress(_:)))
+    private var pastePoint: CGPoint = .zero
     var onPageChange: ((NotePage) -> Void)?
     var onEndUsingTool: (() -> Void)?
     var onCapture: ((UIImage) -> Void)?
@@ -118,6 +125,10 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         }
         if page.allLayers.first(where: { $0.id == activeLayerID })?.hidden == true { canvas.isHidden = true }
         setupSelectionUI()
+        addInteraction(pasteMenu)
+        pressGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        pressGesture.minimumPressDuration = 0.5
+        addGestureRecognizer(pressGesture)
         holdObserver.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
         canvas.addGestureRecognizer(holdObserver)
         holdObserver.onHold = { [weak self] pts in self?.snapWhileHolding(pts) }
@@ -503,14 +514,14 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         let format = UIGraphicsImageRendererFormat()
         format.scale = min((window?.screen.scale ?? 2) * max(zoom, 1), 6)
         format.opaque = false
+        // The drawn loop only marks the area; the photo is its bounding rectangle.
         let image = UIGraphicsImageRenderer(bounds: rect, format: format).image { _ in
-            path.addClip()
             drawHierarchy(in: bounds, afterScreenUpdates: true)
         }
         onCapture?(image)
 
         let flash = CAShapeLayer()
-        flash.path = path.cgPath
+        flash.path = UIBezierPath(rect: rect).cgPath
         flash.fillColor = UIColor.white.cgColor
         layer.addSublayer(flash)
         let a = CABasicAnimation(keyPath: "opacity")
@@ -738,8 +749,15 @@ extension PageCanvasView {
         let r = selectionRect
         guard !r.isNull else { return }
         let strokes = selected.compactMap { canvas.drawing.strokes.indices.contains($0) ? canvas.drawing.strokes[$0] : nil }
-        // onCapture puts the image on the pasteboard and shows the "copied" hint.
-        onCapture?(PKDrawing(strokes: strokes).image(from: r, scale: (window?.screen.scale ?? 2) * 2))
+        let image = PKDrawing(strokes: strokes).image(from: r, scale: (window?.screen.scale ?? 2) * 2)
+        onCapture?(image)   // shows the "copied" hint
+        // Editable strokes (page units, top-left at 0,0) plus a picture for other apps.
+        let pageStrokes = PKDrawing(strokes: strokes).transformed(using: toView.inverted())
+        let b = pageStrokes.bounds
+        let data = pageStrokes.transformed(using: CGAffineTransform(translationX: -b.minX, y: -b.minY)).dataRepresentation()
+        var item: [String: Any] = [Self.strokesPasteboardType: data]
+        if let png = image.pngData() { item["public.png"] = png }
+        UIPasteboard.general.setItems([item])
     }
 
     /// Handwriting → text box at the same place (Vision, German/English).
@@ -772,6 +790,47 @@ extension PageCanvasView {
             self.page.textBoxes.append(TextBox(frame: pageRect, text: trimmed, fontSize: font, colorHex: colorHex))
             self.syncItems()
             self.commitPage()
+        }
+    }
+}
+
+// MARK: - Long press → paste (strokes, image or text at that spot)
+
+extension PageCanvasView {
+    @objc fileprivate func longPress(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began else { return }
+        let pb = UIPasteboard.general
+        guard pb.contains(pasteboardTypes: [Self.strokesPasteboardType]) || pb.hasImages || pb.hasStrings else { return }
+        pastePoint = g.location(in: self)
+        pasteMenu.presentEditMenu(with: UIEditMenuConfiguration(identifier: nil, sourcePoint: pastePoint))
+    }
+
+    func editMenuInteraction(_ interaction: UIEditMenuInteraction, menuFor configuration: UIEditMenuConfiguration,
+                             suggestedActions: [UIMenuElement]) -> UIMenu? {
+        UIMenu(children: [UIAction(title: "Einfügen", image: UIImage(systemName: "doc.on.clipboard")) { [weak self] _ in
+            self?.paste()
+        }])
+    }
+
+    private func paste() {
+        guard scale > 0 else { return }
+        let at = pagePoint(pastePoint)
+        let pb = UIPasteboard.general
+        if let data = pb.data(forPasteboardType: Self.strokesPasteboardType), let pasted = try? PKDrawing(data: data) {
+            let placed = pasted.transformed(using: CGAffineTransform(translationX: at.x, y: at.y))
+            var d = canvas.drawing
+            d.append(placed.transformed(using: toView))
+            canvas.drawing = d   // saved via drawingDidChange
+        } else if let img = pb.image, let data = img.pngData(), let name = addAttachment?(data) {
+            let w = min(page.size.width * 0.6, img.size.width * 2)
+            let h = w * img.size.height / max(img.size.width, 1)
+            page.images.append(ImageItem(frame: CGRect(x: at.x, y: at.y, width: w, height: h), file: name))
+            syncItems()
+            commitPage()
+        } else if let text = pb.string, !text.isEmpty {
+            page.textBoxes.append(TextBox(frame: CGRect(x: at.x, y: at.y, width: 500, height: 60), text: text))
+            syncItems()
+            commitPage()
         }
     }
 }
