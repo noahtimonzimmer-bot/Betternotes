@@ -45,7 +45,7 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
 
     func setPages(_ new: [NotePage]) {
         let sig = new.map { p -> String in
-            let m = provider?.margins(for: p) ?? (0, 0)
+            let m = provider?.margins(for: p) ?? (left: 0, right: 0)
             return "\(p.id)|\(p.width)|\(p.height)|\(m.left)|\(m.right)|\(provider?.defaultMargin(for: p) ?? 0)"
         }
         pages = new
@@ -95,7 +95,7 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
         // wider than the screen (scroll sideways) instead of shrinking the paper.
         frames = pages.map { p in
             let d = provider?.defaultMargin(for: p) ?? 0
-            let m = provider?.margins(for: p) ?? (d, d)
+            let m = provider?.margins(for: p) ?? (left: d, right: d)
             let k = width / (p.width + 2 * d)
             let f = CGRect(x: side + (d - m.left) * k, y: y, width: (p.width + m.left + m.right) * k, height: p.height * k)
             y += f.height + spacing

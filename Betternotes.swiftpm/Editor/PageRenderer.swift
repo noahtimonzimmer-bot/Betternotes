@@ -75,7 +75,8 @@ enum PDFExporter {
                 var rect = CGRect(origin: .zero, size: page.size)
                 if includeMarginNotes {
                     var used = drawing.bounds
-                    for f in page.images.map(\.frame) + page.textBoxes.map(\.frame) { used = used.union(f) }
+                    let objectFrames: [CGRect] = page.images.map { $0.frame } + page.textBoxes.map { $0.frame }
+                    for f in objectFrames { used = used.union(f) }
                     if !used.isNull {
                         let minX = min(0, used.minX - 16), maxX = max(page.width, used.maxX + 16)
                         rect = CGRect(x: minX, y: 0, width: maxX - minX, height: page.height)
