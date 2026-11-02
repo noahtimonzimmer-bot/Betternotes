@@ -27,6 +27,8 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     private let holdObserver = HoldObserver(target: nil, action: nil)
     /// Set when the shape was already placed while the pencil was resting.
     private var snappedDuringHold = false
+    /// Shape placed while holding, adjustable until the pencil lifts.
+    private var adjusting: (index: Int, stroke: PKStroke, center: CGPoint, anchor: CGPoint)?
     /// When false, only the Pencil drives the camera lasso (fingers keep scrolling).
     var fingerDraws = false {
         didSet {
@@ -86,6 +88,8 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         holdObserver.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
         canvas.addGestureRecognizer(holdObserver)
         holdObserver.onHold = { [weak self] pts in self?.snapWhileHolding(pts) }
+        holdObserver.onMoveAfterHold = { [weak self] p in self?.adjustShape(to: p) }
+        holdObserver.onEndAfterHold = { [weak self] in self?.adjusting = nil }
 
         cameraGesture.isEnabled = false
         cameraGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
@@ -369,8 +373,32 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
             if d.strokes.count > base { d.strokes.removeLast(d.strokes.count - base) }
             d.strokes.append(shape)
             self.canvas.drawing = d
+            let b = shape.renderBounds
+            self.adjusting = (d.strokes.count - 1, shape, CGPoint(x: b.midX, y: b.midY), pts.last ?? .zero)
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }
+    }
+
+    /// GoodNotes-style: keep the pencil down after the shape appears and drag to scale/rotate it.
+    private func adjustShape(to p: CGPoint) {
+        guard let a = adjusting else { return }
+        let v0 = CGPoint(x: a.anchor.x - a.center.x, y: a.anchor.y - a.center.y)
+        let v1 = CGPoint(x: p.x - a.center.x, y: p.y - a.center.y)
+        let l0 = hypot(v0.x, v0.y)
+        guard l0 > 4 else { return }
+        let scale = max(0.1, hypot(v1.x, v1.y) / l0)
+        var angle = atan2(v1.y, v1.x) - atan2(v0.y, v0.x)
+        let snapped = (angle / (.pi / 2)).rounded() * (.pi / 2)
+        if abs(angle - snapped) < 5 * .pi / 180 { angle = snapped }
+        var t = CGAffineTransform(translationX: a.center.x, y: a.center.y)
+        t = t.rotated(by: angle).scaledBy(x: scale, y: scale)
+        t = t.translatedBy(x: -a.center.x, y: -a.center.y)
+        var s = a.stroke
+        s.transform = a.stroke.transform.concatenating(t)
+        var d = canvas.drawing
+        guard d.strokes.indices.contains(a.index) else { return }
+        d.strokes[a.index] = s
+        canvas.drawing = d
     }
 
     /// Endless margin: ink near the outer edge extends the writing space on that side.

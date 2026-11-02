@@ -203,6 +203,9 @@ final class HoldObserver: UIGestureRecognizer {
     private(set) var heldAtEnd = false
     /// Fires while the pencil is still down and has rested for `holdDuration`; gets all points so far.
     var onHold: (([CGPoint]) -> Void)?
+    /// After `onHold` fired: pencil keeps moving (to resize/rotate the shape) and finally lifts.
+    var onMoveAfterHold: ((CGPoint) -> Void)?
+    var onEndAfterHold: (() -> Void)?
     private(set) var points: [CGPoint] = []
     private var lastMoveTime: TimeInterval = 0
     private var lastPoint: CGPoint = .zero
@@ -243,6 +246,10 @@ final class HoldObserver: UIGestureRecognizer {
         guard let t = touches.first else { return }
         for c in event.coalescedTouches(for: t) ?? [t] {
             let p = c.location(in: view)
+            if fired {
+                onMoveAfterHold?(p)
+                continue
+            }
             points.append(p)
             if hypot(p.x - lastPoint.x, p.y - lastPoint.y) > 3 {
                 lastPoint = p
@@ -255,12 +262,14 @@ final class HoldObserver: UIGestureRecognizer {
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
         timer?.invalidate()
         if let t = touches.first { heldAtEnd = t.timestamp - lastMoveTime >= holdDuration }
+        if fired { onEndAfterHold?() }
         state = .failed
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
         timer?.invalidate()
         heldAtEnd = false
+        if fired { onEndAfterHold?() }
         state = .failed
     }
 }

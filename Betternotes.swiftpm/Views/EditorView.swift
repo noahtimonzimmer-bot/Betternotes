@@ -26,6 +26,8 @@ struct EditorView: View {
     @EnvironmentObject var settings: AppSettings
     @StateObject private var tools: ToolController
     @StateObject private var model = EditorModel()
+    @StateObject private var recorder = AudioRecorder()
+    @State private var showRecordings = false
     @State private var showThumbnails = false
     @State private var photoItem: PhotosPickerItem?
     @State private var showPhotoPicker = false
@@ -128,6 +130,25 @@ struct EditorView: View {
             Button { model.undoManager()?.redo() } label: { Image(systemName: "arrow.uturn.forward") }
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
+            Button {
+                if recorder.isRecording {
+                    if let rec = recorder.stop() { store.update(document.id) { $0.recordings.append(rec) } }
+                    model.show("Aufnahme gespeichert")
+                } else {
+                    Task {
+                        if await recorder.start(in: doc, store: store) { model.show("Aufnahme läuft …") }
+                        else { model.show("Mikrofon nicht erlaubt (Einstellungen › Betternotes)") }
+                    }
+                }
+            } label: {
+                Image(systemName: recorder.isRecording ? "stop.circle.fill" : "mic")
+                    .foregroundStyle(recorder.isRecording ? .red : .accentColor)
+            }
+            .contextMenu { Button("Aufnahmen anzeigen") { showRecordings = true } }
+            Button { showRecordings = true } label: { Image(systemName: "waveform") }
+                .popover(isPresented: $showRecordings) {
+                    RecordingsView(recorder: recorder, doc: doc)
+                }
             Menu {
                 Menu("Neue Seite danach") {
                     ForEach(PageTemplate.allCases) { t in
@@ -454,13 +475,18 @@ struct SearchView: View {
     @ObservedObject var model: EditorModel
     @State private var query = ""
     @State private var results: [(page: Int, text: String)] = []
+    @AppStorage("search.handwriting") private var includeHandwriting = true
+    @State private var progress: Double?
 
     var body: some View {
-        VStack(alignment: .leading) {
-            TextField("In PDF-Text und Textfeldern suchen", text: $query)
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Suchen in PDF, Textfeldern und Handschrift", text: $query)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(run)
-                .padding()
+            Toggle("Handschrift durchsuchen", isOn: $includeHandwriting).font(.callout)
+            if let progress {
+                ProgressView(value: progress) { Text("Handschrift wird gelesen…").font(.caption) }
+            }
             List(results.indices, id: \.self) { k in
                 Button {
                     model.scrollToPage?(results[k].page)
@@ -471,24 +497,54 @@ struct SearchView: View {
                     }
                 }
             }
-            .overlay { if results.isEmpty && !query.isEmpty { Text("Keine Treffer").foregroundStyle(.secondary) } }
+            .listStyle(.plain)
+            .overlay {
+                if results.isEmpty && !query.isEmpty && progress == nil {
+                    Text("Keine Treffer").foregroundStyle(.secondary)
+                }
+            }
         }
+        .padding()
+    }
+
+    private static func snippet(_ text: String, _ query: String) -> String? {
+        guard let r = text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) else { return nil }
+        let lo = text.index(r.lowerBound, offsetBy: -40, limitedBy: text.startIndex) ?? text.startIndex
+        let hi = text.index(r.upperBound, offsetBy: 60, limitedBy: text.endIndex) ?? text.endIndex
+        return String(text[lo..<hi]).replacingOccurrences(of: "\n", with: " ")
     }
 
     private func run() {
-        var out: [(Int, String)] = []
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { results = []; return }
+        var out: [(page: Int, text: String)] = []
         var pdfs: [String: PDFDocument] = [:]
         for (i, page) in doc.pages.enumerated() {
-            for tb in page.textBoxes where tb.text.localizedCaseInsensitiveContains(query) { out.append((i, tb.text)) }
+            for tb in page.textBoxes where tb.text.localizedCaseInsensitiveContains(q) { out.append((i, tb.text)) }
             guard let att = page.pdfAttachment, let idx = page.pdfPageIndex else { continue }
             if pdfs[att] == nil { pdfs[att] = PDFDocument(url: store.attachmentURL(att, in: doc)) }
-            guard let p = pdfs[att]?.page(at: idx), let text = p.string,
-                  let r = text.range(of: query, options: .caseInsensitive) else { continue }
-            let lo = text.index(r.lowerBound, offsetBy: -40, limitedBy: text.startIndex) ?? text.startIndex
-            let hi = text.index(r.upperBound, offsetBy: 60, limitedBy: text.endIndex) ?? text.endIndex
-            out.append((i, String(text[lo..<hi]).replacingOccurrences(of: "\n", with: " ")))
+            if let text = pdfs[att]?.page(at: idx)?.string, let sn = Self.snippet(text, q) { out.append((i, sn)) }
         }
-        results = out.map { (page: $0.0, text: $0.1) }
+        results = out
+        guard includeHandwriting else { return }
+
+        let jobs = doc.pages.enumerated().map { i, page in
+            (i, page, store.drawing(for: page, in: doc),
+             store.packageURL(doc).appendingPathComponent("pages/\(page.id.uuidString).ocr.json"))
+        }
+        progress = 0
+        Task {
+            for (n, job) in jobs.enumerated() {
+                let (i, page, drawing, url) = job
+                let text = await Task.detached(priority: .userInitiated) {
+                    HandwritingIndex.text(for: page, drawing: drawing, cacheURL: url)
+                }.value
+                if let sn = Self.snippet(text, q) { results.append((i, "✍︎ " + sn)) }
+                progress = Double(n + 1) / Double(max(jobs.count, 1))
+            }
+            results.sort { $0.page < $1.page }
+            progress = nil
+        }
     }
 }
 

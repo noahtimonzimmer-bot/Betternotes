@@ -26,6 +26,9 @@ let package = Package(
                 .portraitUpsideDown,
                 .landscapeRight,
                 .landscapeLeft
+            ],
+            capabilities: [
+                .microphone(purposeString: "Für Audioaufnahmen in deinen Notizen.")
             ]
         )
     ],

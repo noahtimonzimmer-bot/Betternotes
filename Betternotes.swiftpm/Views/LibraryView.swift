@@ -6,6 +6,8 @@ struct LibraryView: View {
     @EnvironmentObject var store: DocumentStore
     @EnvironmentObject var settings: AppSettings
     @State private var selection: UUID?
+    /// Open notebooks as tabs (like GoodNotes), most recent selection is active.
+    @State private var tabs: [UUID] = []
     @State private var columns: NavigationSplitViewVisibility = .all
     @State private var importing = false
     @State private var importFolder: UUID?
@@ -47,12 +49,23 @@ struct LibraryView: View {
             }
         } detail: {
             if let id = selection, let doc = store.document(id) {
-                EditorView(document: doc, settings: settings)
-                    .id(doc.id)
+                VStack(spacing: 0) {
+                    if tabs.count > 1 { tabStrip }
+                    EditorView(document: doc, settings: settings)
+                        .id(doc.id)
+                }
             } else {
                 ContentUnavailableView("Kein Notizbuch geöffnet", systemImage: "book.closed",
                                        description: Text("Links ein Notizbuch wählen oder mit + ein neues anlegen."))
             }
+        }
+        .onChange(of: selection) { _, id in
+            guard let id, !tabs.contains(id) else { return }
+            tabs.append(id)
+            if tabs.count > 8 { tabs.removeFirst() }
+        }
+        .onChange(of: store.documents.map(\.id)) { _, ids in
+            tabs.removeAll { !ids.contains($0) }
         }
         .sheet(isPresented: $showSettings) {
             NavigationStack {
@@ -87,6 +100,31 @@ struct LibraryView: View {
             deleteDocument: { doc in if selection == doc.id { selection = nil }; store.delete(doc) },
             deleteFolder: { f in store.deleteFolder(f.id) }
         )
+    }
+
+    private var tabStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(tabs, id: \.self) { id in
+                    if let d = store.document(id) {
+                        HStack(spacing: 6) {
+                            Text(d.title).lineLimit(1).font(.callout)
+                            Button {
+                                tabs.removeAll { $0 == id }
+                                if selection == id { selection = tabs.last }
+                            } label: { Image(systemName: "xmark").font(.caption2) }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(selection == id ? Color.accentColor.opacity(0.2) : Color(.secondarySystemBackground),
+                                    in: RoundedRectangle(cornerRadius: 8))
+                        .onTapGesture { selection = id }
+                    }
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+        }
+        .background(.bar)
     }
 
     private func commitRename() {

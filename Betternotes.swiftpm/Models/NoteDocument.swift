@@ -11,6 +11,7 @@ struct NoteDocument: Identifiable, Codable, Hashable {
     var modified: Date = Date()
     var folderID: UUID?
     var pages: [NotePage] = [NotePage()]
+    var recordings: [Recording] = []
 
     init(id: UUID = UUID(), title: String, folderID: UUID? = nil, pages: [NotePage] = [NotePage()]) {
         self.id = id
@@ -26,7 +27,15 @@ struct NoteDocument: Identifiable, Codable, Hashable {
         modified = try c.decodeIfPresent(Date.self, forKey: .modified) ?? Date()
         folderID = try c.decodeIfPresent(UUID.self, forKey: .folderID)
         pages = try c.decodeIfPresent([NotePage].self, forKey: .pages) ?? [NotePage()]
+        recordings = try c.decodeIfPresent([Recording].self, forKey: .recordings) ?? []
     }
+}
+
+struct Recording: Identifiable, Codable, Hashable {
+    var id: UUID = UUID()
+    var file: String          // in attachments/
+    var date: Date
+    var duration: TimeInterval
 }
 
 struct Folder: Identifiable, Codable, Hashable {
