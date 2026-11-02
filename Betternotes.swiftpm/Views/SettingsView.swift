@@ -20,8 +20,7 @@ struct SettingsView: View {
             }
             Section {
                 Picker("Schreibrand neben PDF", selection: $settings.marginRatio) {
-                    Text("Aus").tag(0.0)
-                    Text("Schmal").tag(0.2)
+                    Text("Schmal").tag(0.15)
                     Text("Mittel").tag(0.35)
                     Text("Breit").tag(0.6)
                 }

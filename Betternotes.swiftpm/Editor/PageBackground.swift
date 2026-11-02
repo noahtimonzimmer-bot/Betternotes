@@ -1,0 +1,80 @@
+import PDFKit
+import UIKit
+
+/// Paper rendering (PDF page or template) on a serial background queue.
+enum PageBackground {
+    private static let queue = DispatchQueue(label: "betternotes.paper", qos: .userInitiated)
+    nonisolated(unsafe) private static var pdfCache: [URL: PDFDocument] = [:]   // only touched on `queue`
+
+    static func render(page: NotePage, pdf: URL?, pixelWidth: CGFloat, completion: @escaping (UIImage?) -> Void) {
+        queue.async {
+            let img = image(page: page, pdf: pdf, pixelWidth: pixelWidth)
+            DispatchQueue.main.async { completion(img) }
+        }
+    }
+
+    /// Synchronous variant for export/thumbnails; must not run concurrently with `render`.
+    static func imageSync(page: NotePage, pdf: URL?, pixelWidth: CGFloat) -> UIImage? {
+        queue.sync { image(page: page, pdf: pdf, pixelWidth: pixelWidth) }
+    }
+
+    static func pdfPage(_ url: URL, _ index: Int) -> PDFPage? {
+        queue.sync { document(url)?.page(at: index) }
+    }
+
+    private static func document(_ url: URL) -> PDFDocument? {
+        if let d = pdfCache[url] { return d }
+        if pdfCache.count > 6 { pdfCache.removeAll() }
+        let d = PDFDocument(url: url)
+        pdfCache[url] = d
+        return d
+    }
+
+    private static func image(page: NotePage, pdf: URL?, pixelWidth: CGFloat) -> UIImage? {
+        let size = CGSize(width: pixelWidth, height: pixelWidth * page.height / page.width)
+        if let pdf, let p = document(pdf)?.page(at: page.pdfPageIndex ?? 0) {
+            return p.thumbnail(of: size, for: .mediaBox)
+        }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+            drawTemplate(page.template, in: ctx.cgContext, size: size, unit: size.width / page.width)
+        }
+    }
+
+    /// Draws ruling in a context whose page origin is (0,0); `unit` = pixels per page unit.
+    static func drawTemplate(_ t: PageTemplate, in c: CGContext, size: CGSize, unit: CGFloat) {
+        let line = UIColor(red: 0.62, green: 0.72, blue: 0.86, alpha: 0.7).cgColor
+        c.setStrokeColor(line)
+        c.setFillColor(line)
+        c.setLineWidth(max(1, 1.2 * unit))
+        switch t {
+        case .blank:
+            break
+        case .lined:
+            var y = 160 * unit
+            while y < size.height - 40 * unit {
+                c.move(to: CGPoint(x: 0, y: y)); c.addLine(to: CGPoint(x: size.width, y: y)); y += 52 * unit
+            }
+            c.strokePath()
+        case .grid:
+            let step = 40 * unit
+            var x = step
+            while x < size.width { c.move(to: CGPoint(x: x, y: 0)); c.addLine(to: CGPoint(x: x, y: size.height)); x += step }
+            var y = step
+            while y < size.height { c.move(to: CGPoint(x: 0, y: y)); c.addLine(to: CGPoint(x: size.width, y: y)); y += step }
+            c.strokePath()
+        case .dotted:
+            let step = 40 * unit, r = max(1, 1.8 * unit)
+            var y = step
+            while y < size.height {
+                var x = step
+                while x < size.width { c.fillEllipse(in: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r)); x += step }
+                y += step
+            }
+        }
+    }
+}

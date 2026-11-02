@@ -8,6 +8,7 @@ enum PencilAction: String, CaseIterable, Identifiable {
     case toggleEraser    // eraser until gesture again
     case previousTool
     case lasso
+    case cameraLasso
     case none
 
     var id: String { rawValue }
@@ -19,6 +20,7 @@ enum PencilAction: String, CaseIterable, Identifiable {
         case .toggleEraser: return "Radierer ein/aus"
         case .previousTool: return "Vorheriges Werkzeug"
         case .lasso: return "Lasso"
+        case .cameraLasso: return "Kamera-Lasso"
         case .none: return "Nichts"
         }
     }
@@ -49,7 +51,7 @@ final class AppSettings: ObservableObject {
         squeeze = PencilAction(rawValue: d.string(forKey: "pencil.squeeze") ?? "") ?? .toolPalette
         onlyPencilDraws = d.bool(forKey: "pencil.onlyPencilDraws")
         eraserWholeStroke = d.bool(forKey: "eraser.wholeStroke")
-        marginRatio = d.double(forKey: "page.margin")
+        marginRatio = max(0.15, d.double(forKey: "page.margin"))
         straightenLines = d.bool(forKey: "ink.straighten")
     }
 }
