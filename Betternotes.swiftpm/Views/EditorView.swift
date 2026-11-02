@@ -33,6 +33,8 @@ struct EditorView: View {
     @State private var goToPage = ""
     @State private var askGoTo = false
     @State private var exportURL: URL?
+    @State private var askBookmark = false
+    @State private var bookmarkTitle = ""
     let document: NoteDocument
 
     init(document: NoteDocument, settings: AppSettings) {
@@ -105,6 +107,17 @@ struct EditorView: View {
             }
         }
         .sheet(item: $exportURL) { url in ShareSheet(items: [url]) }
+        .alert("Gliederung", isPresented: $askBookmark) {
+            TextField("Titel (leer = entfernen)", text: $bookmarkTitle)
+            Button("Abbrechen", role: .cancel) {}
+            Button("OK") {
+                guard doc.pages.indices.contains(model.currentPage) else { return }
+                var p = doc.pages[model.currentPage]
+                let t = bookmarkTitle.trimmingCharacters(in: .whitespaces)
+                p.bookmark = t.isEmpty ? nil : t
+                store.updatePage(p, in: document.id)
+            }
+        }
     }
 
     @ToolbarContentBuilder
@@ -123,6 +136,10 @@ struct EditorView: View {
                 }
                 Button("Seite duplizieren") { store.duplicatePage(at: model.currentPage, in: document.id) }
                 Button("Gehe zu Seite…") { askGoTo = true }
+                Button("Zur Gliederung hinzufügen…") {
+                    bookmarkTitle = doc.pages.indices.contains(model.currentPage) ? (doc.pages[model.currentPage].bookmark ?? "") : ""
+                    askBookmark = true
+                }
                 Menu("Vorlage dieser Seite") {
                     ForEach(PageTemplate.allCases) { t in
                         Button(t.label) { setTemplate(t) }
@@ -329,8 +346,43 @@ struct PageThumbnailList: View {
     @EnvironmentObject var store: DocumentStore
     let doc: NoteDocument
     @ObservedObject var model: EditorModel
+    @State private var showOutline = false
 
     var body: some View {
+        VStack(spacing: 0) {
+            Picker("", selection: $showOutline) {
+                Text("Seiten").tag(false)
+                Text("Gliederung").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .padding(8)
+            if showOutline { outline } else { thumbnails }
+        }
+        .background(Color(.secondarySystemBackground))
+    }
+
+    private var outline: some View {
+        List {
+            ForEach(Array(doc.pages.enumerated()).filter { $0.element.bookmark != nil }, id: \.element.id) { i, page in
+                Button { model.scrollToPage?(i) } label: {
+                    HStack {
+                        Text(page.bookmark ?? "").lineLimit(2)
+                        Spacer()
+                        Text("\(i + 1)").foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .listStyle(.plain)
+        .overlay {
+            if !doc.pages.contains(where: { $0.bookmark != nil }) {
+                Text("Seitenmenü › „Zur Gliederung hinzufügen“").font(.caption).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center).padding()
+            }
+        }
+    }
+
+    private var thumbnails: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 14) {
@@ -353,7 +405,6 @@ struct PageThumbnailList: View {
                 }
                 .padding(12)
             }
-            .background(Color(.secondarySystemBackground))
             .onChange(of: model.currentPage) { _, i in
                 if doc.pages.indices.contains(i) { withAnimation { proxy.scrollTo(doc.pages[i].id, anchor: .center) } }
             }

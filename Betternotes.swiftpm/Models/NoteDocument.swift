@@ -75,6 +75,8 @@ struct NotePage: Identifiable, Codable, Hashable {
     var template: PageTemplate = .blank
     var textBoxes: [TextBox] = []
     var images: [ImageItem] = []
+    /// Title in the notebook outline (GoodNotes "Gliederung"); nil = not in outline.
+    var bookmark: String?
 
     var size: CGSize { CGSize(width: width, height: height) }
 
@@ -99,6 +101,7 @@ struct NotePage: Identifiable, Codable, Hashable {
         template = try c.decodeIfPresent(PageTemplate.self, forKey: .template) ?? .blank
         textBoxes = try c.decodeIfPresent([TextBox].self, forKey: .textBoxes) ?? []
         images = try c.decodeIfPresent([ImageItem].self, forKey: .images) ?? []
+        bookmark = try c.decodeIfPresent(String.self, forKey: .bookmark)
     }
 
     /// Fresh copy with a new id (drawing is copied separately by the store).

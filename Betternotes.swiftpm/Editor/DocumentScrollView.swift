@@ -119,8 +119,9 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { content }
 
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
+        // Centre the pages when zoomed out (frame of a transformed view must not be set).
         let dx = max(0, (bounds.width - contentSize.width) / 2)
-        content.frame.origin.x = dx
+        contentInset = UIEdgeInsets(top: 0, left: dx, bottom: 0, right: dx)
         updateVisiblePages()
     }
 
