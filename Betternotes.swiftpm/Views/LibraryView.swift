@@ -8,6 +8,8 @@ struct LibraryView: View {
     @State private var selection: UUID?
     /// Open notebooks as tabs (like GoodNotes), most recent selection is active.
     @State private var tabs: [UUID] = []
+    /// Folder shown in the document grid (nil = top level).
+    @State private var gridFolder: UUID?
     @State private var columns: NavigationSplitViewVisibility = .all
     @State private var importing = false
     @State private var importFolder: UUID?
@@ -31,6 +33,13 @@ struct LibraryView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             List(selection: $selection) {
+                Button {
+                    selection = nil
+                } label: {
+                    Label("Dokumente", systemImage: "square.grid.2x2")
+                        .font(.headline)
+                }
+                .listRowBackground(selection == nil ? Color.accentColor.opacity(0.15) : Color.clear)
                 if search.isEmpty {
                     FolderContents(parent: nil, actions: actions)
                 } else {
@@ -50,13 +59,12 @@ struct LibraryView: View {
         } detail: {
             if let id = selection, let doc = store.document(id) {
                 VStack(spacing: 0) {
-                    if tabs.count > 1 { tabStrip }
+                    tabStrip
                     EditorView(document: doc, settings: settings)
                         .id(doc.id)
                 }
             } else {
-                ContentUnavailableView("Kein Notizbuch geöffnet", systemImage: "book.closed",
-                                       description: Text("Links ein Notizbuch wählen oder mit + ein neues anlegen."))
+                LibraryGridView(folder: $gridFolder, actions: actions) { selection = $0 }
             }
         }
         .onChange(of: selection) { _, id in
@@ -105,6 +113,12 @@ struct LibraryView: View {
     private var tabStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
+                Button { selection = nil } label: {
+                    Label("Dokumente", systemImage: "square.grid.2x2").font(.callout)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
                 ForEach(tabs, id: \.self) { id in
                     if let d = store.document(id) {
                         HStack(spacing: 6) {
