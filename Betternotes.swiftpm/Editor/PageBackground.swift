@@ -48,17 +48,19 @@ enum PageBackground {
     static let dotStep: CGFloat = 40
     static let dotRadius: CGFloat = 1.4
     static let dotColor = UIColor(white: 0.45, alpha: 0.32)
+    /// Neutral background around the pages.
+    static let surfaceColor = UIColor(white: 0.955, alpha: 1)
 
     /// Repeating tile for the dotted area around pages; dots line up with the page grid.
     /// `scale` = points per page unit, `originX` = x of the paper's left edge in the view.
     static func dotPattern(scale: CGFloat, originX: CGFloat) -> UIColor {
-        let s = max(4, dotStep * scale)
+        let s = max(4, (dotStep * scale).rounded())   // whole points: no seams between tiles
         let r = max(0.7, dotRadius * scale)
         let ox = originX.truncatingRemainder(dividingBy: s)
         let format = UIGraphicsImageRendererFormat()
         format.scale = UIScreen.main.scale
         let tile = UIGraphicsImageRenderer(size: CGSize(width: s, height: s), format: format).image { ctx in
-            UIColor(white: 0.975, alpha: 1).setFill()
+            surfaceColor.setFill()
             ctx.fill(CGRect(x: 0, y: 0, width: s, height: s))
             dotColor.setFill()
             // dot sits on the tile corner row; draw wrapped copies so halves meet across tiles

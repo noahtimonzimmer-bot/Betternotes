@@ -38,7 +38,7 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
         delegate = self
         minimumZoomScale = 0.6
         maximumZoomScale = 6
-        backgroundColor = .systemGray6
+        backgroundColor = PageBackground.surfaceColor
         delaysContentTouches = false
         let finger = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         panGestureRecognizer.allowedTouchTypes = finger
@@ -133,6 +133,11 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
         shiftX = shift
         let maxX = (frames.map(\.maxX).max() ?? bounds.width) + side
         content.frame = CGRect(x: 0, y: 0, width: max(bounds.width, maxX), height: y)
+        // one continuous, subtly dotted surface behind all pages (scales with zoom)
+        if let p = pages.first {
+            let d = provider?.defaultMargin(for: p) ?? 0
+            content.backgroundColor = PageBackground.dotPattern(scale: (bounds.width - 2 * side) / (p.width + 2 * d), originX: 0)
+        }
         contentSize = content.frame.size
         for (i, p) in pages.enumerated() { views[p.id]?.frame = frames[i] }
     }
@@ -180,7 +185,6 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         updateVisiblePages()
-        growIfNearHorizontalEdge()
     }
 
     /// Near the left/right end of the content: add another page width of space on that side.

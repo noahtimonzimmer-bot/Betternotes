@@ -175,10 +175,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         scale = s
         marginBackground.frame = bounds
         marginBackground.isHidden = marginLeft + marginRight == 0
-        if changed || marginPatternScale != s {
-            marginPatternScale = s
-            marginBackground.backgroundColor = PageBackground.dotPattern(scale: s, originX: marginLeft * s)
-        }
+        marginBackground.isHidden = true   // the document view draws one continuous surface
         paper.frame = viewRect(CGRect(origin: .zero, size: page.size))
         itemsLayer.frame = bounds
         canvas.frame = bounds
@@ -199,7 +196,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     func setZoom(_ z: CGFloat) {
         zoom = z
         let screen = window?.screen.scale ?? 2
-        canvas.contentScaleFactor = min(screen * max(z, 1), 8)
+        canvas.contentScaleFactor = screen * min(max(z, 1), 2)
         for l in layerCanvases { l.canvas.contentScaleFactor = canvas.contentScaleFactor }
         updateSelectionUI()
         requestBackgroundIfNeeded()
@@ -421,7 +418,8 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
                canvasView.drawing.strokes.count == expected,
                let last = canvasView.drawing.strokes.last {
                 let held = self.holdToShape && self.holdObserver.heldAtEnd
-                let replacement = (self.mode == .shape || held) ? ShapeRecognizer.shape(from: last)
+                let replacement = self.mode == .shape ? ShapeRecognizer.shape(from: last)
+                    : held ? ShapeRecognizer.shape(from: last, strict: true)
                     : (self.straighten ? ShapeRecognizer.straightLine(from: last) : nil)
                 if let replacement {
                     var d = canvasView.drawing
@@ -444,7 +442,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
                           opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
         }
         let rawStroke = PKStroke(ink: ink.ink, path: PKStrokePath(controlPoints: raw, creationDate: Date()))
-        guard ShapeRecognizer.shape(from: rawStroke) != nil else { return }
+        guard ShapeRecognizer.shape(from: rawStroke, strict: mode != .shape) != nil else { return }
         let base = strokeCountAtToolStart
         snappedDuringHold = true
         // Toggling the drawing gesture ends the stroke in progress.

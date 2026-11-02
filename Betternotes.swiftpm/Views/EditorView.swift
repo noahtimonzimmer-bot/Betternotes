@@ -67,10 +67,11 @@ struct EditorView: View {
                         // tap anywhere else closes the ring
                         Color.black.opacity(0.001)
                             .onTapGesture { tools.paletteLocation = nil }
-                        let r = ToolPaletteView.radius + 30
-                        ToolPaletteView()
-                            .position(x: min(max(p.x, r), geo.size.width - r),
-                                      y: min(max(p.y, r), geo.size.height - 60))
+                        // the band opens up-left of the tip: keep that much room
+                        let r = ToolPaletteView.radius + 40
+                        ToolPaletteView(onUndo: { model.undoManager()?.undo() })
+                            .position(x: min(max(p.x, r), geo.size.width - 110),
+                                      y: min(max(p.y, r), geo.size.height - 70))
                             .transition(.scale(scale: 0.6).combined(with: .opacity))
                     }
                 }
@@ -277,10 +278,9 @@ struct DocumentCanvas: UIViewRepresentable {
         /// Space around each page is effectively endless: 1.5 page widths on both sides from the
         /// start (more if you write further out); the paper stays centred.
         func margins(for page: NotePage) -> (left: CGFloat, right: CGFloat) {
-            let d = page.isBoard ? defaultMargin(for: page) : max(defaultMargin(for: page), page.width * 1.5)
-            let l = d + (view?.extraLeft ?? 0) * page.width
-            let r = d + (view?.extraRight ?? 0) * page.width
-            return (max(l, page.marginLeft.map { CGFloat($0) } ?? l), max(r, page.marginRight.map { CGFloat($0) } ?? r))
+            // Fixed, generous space on both sides; never changes while you work (no jumping).
+            let d = page.isBoard ? defaultMargin(for: page) : max(defaultMargin(for: page), page.width * 2)
+            return (max(d, page.marginLeft.map { CGFloat($0) } ?? d), max(d, page.marginRight.map { CGFloat($0) } ?? d))
         }
 
         func makePageView(for page: NotePage) -> PageCanvasView {
@@ -316,7 +316,7 @@ struct DocumentCanvas: UIViewRepresentable {
             let m = margins(for: page)
             v.marginLeft = m.left
             v.marginRight = m.right
-            v.growStep = page.width * 0.5
+            v.growStep = 0
             v.straighten = settings.straightenLines
             v.holdToShape = settings.holdToShape
             v.canvas.drawingPolicy = settings.onlyPencilDraws ? .pencilOnly : .anyInput
@@ -460,61 +460,120 @@ struct FloatingToolBar: View {
     }
 }
 
-/// Appears around the pencil tip on squeeze (Apple Pencil Pro): tools on the inner arc,
-/// colours on the outer arc, stroke widths below the tip.
+/// Appears around the pencil tip on squeeze (Apple Pencil Pro): one curved band with
+/// undo, tools, stroke width and colour; width/colour open a second arc outside.
 struct ToolPaletteView: View {
     @EnvironmentObject var tools: ToolController
-    static let radius: CGFloat = 150
+    var onUndo: () -> Void = {}
+    static let radius: CGFloat = 190
+    private static let band: CGFloat = 62
+    private static let from: Double = 168, to: Double = 292   // degrees, 180 = left, 270 = up
+    @State private var expanded: Expanded?
+    enum Expanded { case colors, widths }
+
+    private let kinds: [ToolController.Kind] = [.lasso, .cameraLasso, .pen, .marker, .shape, .eraser, .text]
 
     var body: some View {
-        let kinds = ToolController.Kind.allCases
-        let colors = ToolController.palette
+        let r = Self.radius
+        let count = kinds.count + 3          // undo + tools + width + colour
         ZStack {
-            Circle().fill(.ultraThinMaterial).frame(width: 2 * Self.radius + 40, height: 2 * Self.radius + 40)
-                .mask(Circle().stroke(lineWidth: 120).frame(width: 2 * Self.radius - 20, height: 2 * Self.radius - 20))
-                .shadow(color: .black.opacity(0.15), radius: 10)
+            // the band
+            arc(r).stroke(.regularMaterial, style: StrokeStyle(lineWidth: Self.band, lineCap: .round))
+                .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
+            arc(r).stroke(Color.primary.opacity(0.06), style: StrokeStyle(lineWidth: Self.band, lineCap: .round))
+
+            item(0, of: count) {
+                Button(action: onUndo) { icon("arrow.uturn.backward", active: false) }
+            }
             ForEach(Array(kinds.enumerated()), id: \.element) { i, k in
-                let a = arcAngle(i, of: kinds.count, from: -165, to: -15)
-                Button { tools.select(k); tools.paletteLocation = nil } label: {
-                    Image(systemName: k.symbol)
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(tools.kind == k ? Color.white : Color.primary)
+                item(i + 1, of: count) {
+                    Button { tools.select(k); tools.paletteLocation = nil } label: { icon(k.symbol, active: tools.kind == k) }
+                }
+            }
+            item(count - 2, of: count) {
+                Button { expanded = expanded == .widths ? nil : .widths } label: {
+                    VStack(spacing: 3) {
+                        Capsule().frame(width: 22, height: max(1.5, tools.width * 0.9))
+                        Capsule().frame(width: 22, height: 1).opacity(0.35)
+                    }
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+            }
+            item(count - 1, of: count) {
+                Button { expanded = expanded == .colors ? nil : .colors } label: {
+                    Circle().fill(Color(uiColor: tools.currentColor)).frame(width: 26, height: 26)
+                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .shadow(color: .black.opacity(0.2), radius: 1)
                         .frame(width: 44, height: 44)
-                        .background(Circle().fill(tools.kind == k ? Color.accentColor : Color(.systemBackground)))
-                        .shadow(color: .black.opacity(0.15), radius: 2)
                 }
                 .buttonStyle(.plain)
-                .offset(x: 95 * cos(a), y: 95 * sin(a))
             }
-            ForEach(Array(colors.enumerated()), id: \.offset) { i, c in
-                let a = arcAngle(i, of: colors.count, from: -150, to: -30)
-                Circle().fill(Color(uiColor: c)).frame(width: 34, height: 34)
-                    .overlay(Circle().stroke(Color.white, lineWidth: 3))
-                    .overlay(Circle().stroke(Color.accentColor, lineWidth: tools.currentColor == c ? 3 : 0).padding(-4))
-                    .shadow(color: .black.opacity(0.2), radius: 2)
-                    .offset(x: Self.radius * cos(a), y: Self.radius * sin(a))
-                    .onTapGesture { tools.setColor(c); tools.paletteLocation = nil }
-            }
-            ForEach(Array(ToolController.widths.enumerated()), id: \.offset) { i, w in
-                let a = arcAngle(i, of: ToolController.widths.count, from: 60, to: 120)
-                Button { tools.width = w; tools.paletteLocation = nil } label: {
-                    Circle().fill(Color.primary).frame(width: 4 + w * 2.4, height: 4 + w * 2.4)
-                        .frame(width: 40, height: 40)
-                        .background(Circle().fill(Color(.systemBackground)))
-                        .overlay(Circle().stroke(Color.accentColor, lineWidth: tools.width == w ? 2 : 0))
-                        .shadow(color: .black.opacity(0.15), radius: 2)
+
+            // second arc: colours or widths
+            if let expanded {
+                let outer = r + Self.band + 8
+                arc(outer).stroke(.regularMaterial, style: StrokeStyle(lineWidth: 54, lineCap: .round))
+                    .shadow(color: .black.opacity(0.15), radius: 10, y: 3)
+                switch expanded {
+                case .colors:
+                    let colors = ToolController.palette
+                    ForEach(Array(colors.enumerated()), id: \.offset) { i, c in
+                        position(i, of: colors.count, radius: outer) {
+                            Circle().fill(Color(uiColor: c)).frame(width: 30, height: 30)
+                                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                                .overlay(Circle().stroke(Color.accentColor, lineWidth: tools.currentColor == c ? 3 : 0).padding(-4))
+                                .onTapGesture { tools.setColor(c); tools.paletteLocation = nil }
+                        }
+                    }
+                case .widths:
+                    let widths: [CGFloat] = [1, 1.6, 2.6, 4.5, 7]
+                    ForEach(Array(widths.enumerated()), id: \.offset) { i, w in
+                        position(i, of: widths.count, radius: outer) {
+                            Button { tools.width = w; tools.paletteLocation = nil } label: {
+                                Circle().fill(Color.primary).frame(width: 4 + w * 2.4, height: 4 + w * 2.4)
+                                    .frame(width: 40, height: 40)
+                                    .background(Circle().stroke(Color.accentColor, lineWidth: abs(tools.width - w) < 0.01 ? 2 : 0))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
-                .buttonStyle(.plain)
-                .offset(x: 95 * cos(a), y: 95 * sin(a))
             }
-            Circle().stroke(Color.accentColor.opacity(0.6), lineWidth: 2).frame(width: 14, height: 14)
         }
-        .frame(width: 2 * Self.radius + 60, height: 2 * Self.radius + 60)
+        .frame(width: 2 * (r + 130), height: 2 * (r + 130))
+        .animation(.spring(duration: 0.25), value: expanded)
     }
 
-    private func arcAngle(_ i: Int, of n: Int, from: Double, to: Double) -> CGFloat {
+    private func arc(_ radius: CGFloat) -> Path {
+        Path { p in
+            let c = CGPoint(x: Self.radius + 130, y: Self.radius + 130)
+            p.addArc(center: c, radius: radius, startAngle: .degrees(Self.from), endAngle: .degrees(Self.to), clockwise: false)
+        }
+    }
+
+    private func angle(_ i: Int, of n: Int) -> CGFloat {
         let t = n > 1 ? Double(i) / Double(n - 1) : 0.5
-        return CGFloat((from + (to - from) * t) * .pi / 180)
+        let pad = 6.0   // keep the first/last item inside the rounded ends
+        return CGFloat((Self.from + pad + (Self.to - Self.from - 2 * pad) * t) * .pi / 180)
+    }
+
+    private func item<V: View>(_ i: Int, of n: Int, @ViewBuilder _ content: () -> V) -> some View {
+        position(i, of: n, radius: Self.radius, content)
+    }
+
+    private func position<V: View>(_ i: Int, of n: Int, radius: CGFloat, @ViewBuilder _ content: () -> V) -> some View {
+        let a = angle(i, of: n)
+        return content().offset(x: radius * cos(a), y: radius * sin(a))
+    }
+
+    private func icon(_ symbol: String, active: Bool) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 19, weight: .medium))
+            .foregroundStyle(active ? Color.white : Color.primary)
+            .frame(width: 42, height: 42)
+            .background(Circle().fill(active ? Color(uiColor: tools.currentColor).opacity(0.9) : Color.clear))
     }
 }
 

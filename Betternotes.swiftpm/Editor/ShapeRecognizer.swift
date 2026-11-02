@@ -19,12 +19,29 @@ enum ShapeRecognizer {
     }
 
     /// Best clean shape for the stroke, or nil if it doesn't look like one.
-    static func shape(from stroke: PKStroke) -> PKStroke? {
+    /// `strict` (draw-and-hold with a normal pen): only big, clearly geometric strokes, so
+    /// handwriting with a short pause is never turned into a shape.
+    static func shape(from stroke: PKStroke, strict: Bool = false) -> PKStroke? {
         let pts = points(stroke)
         guard pts.count >= 3, let first = pts.first, let last = pts.last else { return nil }
         let box = pts.reduce(CGRect.null) { $0.union(CGRect(origin: $1, size: .zero)) }
         let size = max(box.width, box.height)
-        guard size > 20 else { return nil }
+        guard size > (strict ? 70 : 20) else { return nil }
+        if strict {
+            let closed = dist(first, last) < size * 0.22
+            let corners = simplify(pts, epsilon: size * 0.07)
+            if !closed {
+                let straight = maxDeviation(pts, first, last) < size * 0.05
+                let angle = corners.count == 3 && rightAngle(corners) != corners
+                guard straight || angle else { return nil }
+            } else {
+                var c = corners
+                if c.count > 1, dist(c[0], c[c.count - 1]) < size * 0.22 { c.removeLast() }
+                let polyError = meanDistance(pts, toPolygon: c) / size
+                let ellipseError = meanDistance(pts, toPolygon: ellipsePoints(box)) / size
+                guard min(polyError, ellipseError) < 0.05 else { return nil }
+            }
+        }
         let closed = dist(first, last) < size * 0.22
 
         var corners = simplify(pts, epsilon: size * 0.07)
