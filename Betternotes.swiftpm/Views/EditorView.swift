@@ -8,6 +8,8 @@ import SwiftUI
 final class EditorModel: ObservableObject {
     @Published var currentPage = 0
     @Published var toast: String?
+    /// Bumped per page when its ink changes, so thumbnails refresh.
+    @Published var inkVersions: [UUID: Int] = [:]
     var scrollToPage: ((Int) -> Void)?
     var undoManager: () -> UndoManager? = { nil }
 
@@ -73,6 +75,14 @@ struct EditorView: View {
         .animation(.spring(duration: 0.25), value: tools.paletteLocation)
         .animation(.easeInOut(duration: 0.2), value: model.toast)
         .animation(.easeInOut(duration: 0.2), value: showThumbnails)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                ToolBar().padding(.horizontal, 12).padding(.vertical, 6)
+            }
+            .frame(maxWidth: .infinity)
+            .background(.bar)
+            .overlay(alignment: .bottom) { Divider() }
+        }
         .environmentObject(tools)
         .navigationTitle(doc.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -104,7 +114,6 @@ struct EditorView: View {
             Button { model.undoManager()?.undo() } label: { Image(systemName: "arrow.uturn.backward") }
             Button { model.undoManager()?.redo() } label: { Image(systemName: "arrow.uturn.forward") }
         }
-        ToolbarItem(placement: .principal) { ToolBar() }
         ToolbarItemGroup(placement: .topBarTrailing) {
             Menu {
                 Menu("Neue Seite danach") {
@@ -219,7 +228,10 @@ struct DocumentCanvas: UIViewRepresentable {
             v.backgroundRenderer = { width, done in
                 PageBackground.render(page: page, pdf: pdf, pixelWidth: width, completion: done)
             }
-            v.onDrawingChange = { d in store.saveDrawing(d, for: page, in: doc) }
+            v.onDrawingChange = { [weak model] d in
+                store.saveDrawing(d, for: page, in: doc)
+                model?.inkVersions[page.id, default: 0] += 1
+            }
             let docID = self.docID
             v.onPageChange = { p in store.updatePage(p, in: docID) }
             v.onEndUsingTool = { [weak tools] in tools?.didEndUsingTool() }
@@ -235,6 +247,7 @@ struct DocumentCanvas: UIViewRepresentable {
             v.margin = marginRatio(for: page) * page.width
             v.straighten = settings.straightenLines
             v.canvas.drawingPolicy = settings.onlyPencilDraws ? .pencilOnly : .anyInput
+            v.fingerDraws = !settings.onlyPencilDraws
             v.canvas.tool = tools.tool
             v.mode = tools.pageMode
         }
@@ -323,7 +336,7 @@ struct PageThumbnailList: View {
                 LazyVStack(spacing: 14) {
                     ForEach(Array(doc.pages.enumerated()), id: \.element.id) { i, page in
                         VStack(spacing: 4) {
-                            PageThumbnail(doc: doc, page: page)
+                            PageThumbnail(doc: doc, page: page, version: model.inkVersions[page.id] ?? 0)
                                 .overlay(RoundedRectangle(cornerRadius: 4)
                                     .stroke(Color.accentColor, lineWidth: model.currentPage == i ? 3 : 0))
                             Text("\(i + 1)").font(.caption2).foregroundStyle(.secondary)
@@ -352,6 +365,7 @@ struct PageThumbnail: View {
     @EnvironmentObject var store: DocumentStore
     let doc: NoteDocument
     let page: NotePage
+    let version: Int
     @State private var image: UIImage?
 
     var body: some View {
@@ -360,7 +374,8 @@ struct PageThumbnail: View {
         }
         .aspectRatio(page.width / page.height, contentMode: .fit)
         .shadow(radius: 1)
-        .task(id: "\(page.id)-\(doc.modified.timeIntervalSince1970)") {
+        .task(id: "\(page.id)-\(doc.modified.timeIntervalSince1970)-\(version)") {
+            if image != nil { try? await Task.sleep(nanoseconds: 600_000_000) }   // debounce while writing
             let drawing = store.drawing(for: page, in: doc)
             let pdf = page.pdfAttachment.map { store.attachmentURL($0, in: doc) }
             let page = self.page

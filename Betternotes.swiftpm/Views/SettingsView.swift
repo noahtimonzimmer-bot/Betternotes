@@ -24,8 +24,8 @@ struct SettingsView: View {
             Section {
                 Picker("Schreibrand neben PDF", selection: $settings.marginRatio) {
                     Text("Schmal").tag(0.15)
-                    Text("Mittel").tag(0.35)
-                    Text("Breit").tag(0.6)
+                    Text("Mittel").tag(0.25)
+                    Text("Breit").tag(0.4)
                 }
             } footer: {
                 Text("Wie in OneNote: Platz links und rechts der Seite für eigene Notizen.")

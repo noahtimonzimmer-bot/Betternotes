@@ -44,7 +44,7 @@ final class AppSettings: ObservableObject {
             "pencil.squeeze": PencilAction.toolPalette.rawValue,
             "pencil.onlyPencilDraws": true,
             "eraser.wholeStroke": true,
-            "page.margin": 0.35,
+            "page.margin": 0.25,
             "ink.straighten": true,
         ])
         doubleTap = PencilAction(rawValue: d.string(forKey: "pencil.doubleTap") ?? "") ?? .temporaryEraser

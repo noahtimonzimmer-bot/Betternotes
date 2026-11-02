@@ -19,6 +19,14 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     private(set) var pageDrawing: PKDrawing
     var margin: CGFloat = 0 { didSet { if margin != oldValue { scale = 0; setNeedsLayout() } } }
     var straighten = true
+    /// When false, only the Pencil drives the camera lasso (fingers keep scrolling).
+    var fingerDraws = false {
+        didSet {
+            var types = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+            if fingerDraws { types.append(NSNumber(value: UITouch.TouchType.direct.rawValue)) }
+            cameraGesture.allowedTouchTypes = types
+        }
+    }
     var mode: Mode = .ink { didSet { applyMode() } }
 
     var onDrawingChange: ((PKDrawing) -> Void)?
@@ -68,6 +76,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         addSubview(canvas)
 
         cameraGesture.isEnabled = false
+        cameraGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
         addGestureRecognizer(cameraGesture)
         newTextGesture.isEnabled = false
         itemsLayer.addGestureRecognizer(newTextGesture)
