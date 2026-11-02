@@ -38,6 +38,8 @@ final class AppSettings: ObservableObject {
     @Published var marginRatio: Double { didSet { d.set(marginRatio, forKey: "page.margin") } }
     /// PDF export: include notes written in the margin (else they stay app-only).
     @Published var exportMarginNotes: Bool { didSet { d.set(exportMarginNotes, forKey: "export.marginNotes") } }
+    /// Draw + hold briefly → clean shape (rectangle, circle, triangle, line, right angle).
+    @Published var holdToShape: Bool { didSet { d.set(holdToShape, forKey: "ink.holdToShape") } }
     @Published var straightenLines: Bool { didSet { d.set(straightenLines, forKey: "ink.straighten") } }
 
     init() {
@@ -48,6 +50,7 @@ final class AppSettings: ObservableObject {
             "eraser.wholeStroke": true,
             "page.margin": 0.25,
             "ink.straighten": true,
+            "ink.holdToShape": true,
             "export.marginNotes": true,
         ])
         doubleTap = PencilAction(rawValue: d.string(forKey: "pencil.doubleTap") ?? "") ?? .temporaryEraser
@@ -56,6 +59,7 @@ final class AppSettings: ObservableObject {
         eraserWholeStroke = d.bool(forKey: "eraser.wholeStroke")
         marginRatio = max(0.15, d.double(forKey: "page.margin"))
         straightenLines = d.bool(forKey: "ink.straighten")
+        holdToShape = d.bool(forKey: "ink.holdToShape")
         exportMarginNotes = d.bool(forKey: "export.marginNotes")
     }
 }

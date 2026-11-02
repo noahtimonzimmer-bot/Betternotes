@@ -218,7 +218,7 @@ struct DocumentCanvas: UIViewRepresentable {
 
     func updateUIView(_ v: DocumentScrollView, context: Context) {
         _ = tools.kind; _ = tools.color; _ = tools.markerColor; _ = tools.width   // observe tool changes
-        _ = settings.marginRatio; _ = settings.exportMarginNotes; _ = settings.straightenLines; _ = settings.onlyPencilDraws
+        _ = settings.marginRatio; _ = settings.exportMarginNotes; _ = settings.straightenLines; _ = settings.holdToShape; _ = settings.onlyPencilDraws
         v.setPages(store.document(docID)?.pages ?? [])
         v.forEachPageView { view, page in context.coordinator.configure(view, page: page) }
     }
@@ -271,6 +271,7 @@ struct DocumentCanvas: UIViewRepresentable {
             v.marginRight = m.right
             v.growStep = page.width * 0.5
             v.straighten = settings.straightenLines
+            v.holdToShape = settings.holdToShape
             v.canvas.drawingPolicy = settings.onlyPencilDraws ? .pencilOnly : .anyInput
             v.fingerDraws = !settings.onlyPencilDraws
             v.canvas.tool = tools.tool

@@ -10,6 +10,7 @@ Native iPad-Notizapp (SwiftUI + PencilKit). Handschrift auf PDFs, die Striche bl
 - **Endloser Schreibrand**: links und rechts jeder Seite Platz zum Schreiben; schreibst du nahe am Rand, wächst er automatisch weiter (Seite scrollt dann seitlich). Einstellbar, ob Randnotizen im PDF-Export erscheinen oder nur in der App bleiben
 - **Werkzeuge**: Füller, Bleistift, Textmarker, Radierer (ganze Striche oder pixelweise), Formen (Linie, Rechteck, Ellipse), Lasso, **Kamera-Lasso** (Bereich umkreisen → Bild direkt in der Zwischenablage), Text & Objekte (Textfelder, Bilder verschieben/skalieren)
 - **Apple Pencil**: Doppeltippen und Drücken (Pencil Pro) frei belegbar – Werkzeugauswahl an der Stiftspitze, Radierer für einen Zug, Radierer ein/aus, vorheriges Werkzeug, Lasso, Kamera-Lasso
+- **Formerkennung wie GoodNotes**: zeichnen, am Ende kurz halten, abheben → Rechteck (exakte rechte Winkel, auch gedreht), Kreis, Ellipse, Dreieck, Vieleck, Linie oder rechter Winkel; mit jedem Stift
 - **Gerade Linien** werden automatisch begradigt (abschaltbar)
 - **Bilder** aus Fotos oder Zwischenablage einfügen
 - **Suche** im PDF-Text und in Textfeldern

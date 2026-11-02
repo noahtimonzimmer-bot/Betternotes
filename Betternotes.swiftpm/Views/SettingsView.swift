@@ -18,6 +18,7 @@ struct SettingsView: View {
                 Toggle("Nur mit Pencil zeichnen (Finger scrollt)", isOn: $settings.onlyPencilDraws)
             }
             Section("Schreiben") {
+                Toggle("Formen erkennen: zeichnen und kurz halten", isOn: $settings.holdToShape)
                 Toggle("Gerade Linien automatisch begradigen", isOn: $settings.straightenLines)
                 Toggle("Radierer löscht ganze Striche", isOn: $settings.eraserWholeStroke)
             }

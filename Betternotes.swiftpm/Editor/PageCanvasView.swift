@@ -22,12 +22,16 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     /// Writing close to an outer edge adds this much space on that side (page units); 0 = fixed.
     var growStep: CGFloat = 0
     var straighten = true
+    /// Draw a shape, rest the pencil briefly, lift → clean shape (any pen).
+    var holdToShape = true
+    private let holdObserver = HoldObserver(target: nil, action: nil)
     /// When false, only the Pencil drives the camera lasso (fingers keep scrolling).
     var fingerDraws = false {
         didSet {
             var types = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
             if fingerDraws { types.append(NSNumber(value: UITouch.TouchType.direct.rawValue)) }
             cameraGesture.allowedTouchTypes = types
+            holdObserver.allowedTouchTypes = types
         }
     }
     var mode: Mode = .ink { didSet { applyMode() } }
@@ -77,6 +81,8 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         canvas.isScrollEnabled = false
         canvas.delegate = self
         addSubview(canvas)
+        holdObserver.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+        canvas.addGestureRecognizer(holdObserver)
 
         cameraGesture.isEnabled = false
         cameraGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
@@ -314,19 +320,25 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     }
 
     func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
-        if canvasView.tool is PKInkingTool,
-           canvasView.drawing.strokes.count == strokeCountAtToolStart + 1,
-           let last = canvasView.drawing.strokes.last {
-            let replacement = mode == .shape ? ShapeRecognizer.shape(from: last)
-                : (straighten ? ShapeRecognizer.straightLine(from: last) : nil)
-            if let replacement {
-                var d = canvasView.drawing
-                d.strokes[d.strokes.count - 1] = replacement
-                canvasView.drawing = d   // triggers drawingDidChange → saved
+        // Next run-loop turn: the stroke is committed and the hold observer has seen touchesEnded.
+        let expected = strokeCountAtToolStart + 1
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if canvasView.tool is PKInkingTool,
+               canvasView.drawing.strokes.count == expected,
+               let last = canvasView.drawing.strokes.last {
+                let held = self.holdToShape && self.holdObserver.heldAtEnd
+                let replacement = (self.mode == .shape || held) ? ShapeRecognizer.shape(from: last)
+                    : (self.straighten ? ShapeRecognizer.straightLine(from: last) : nil)
+                if let replacement {
+                    var d = canvasView.drawing
+                    d.strokes[d.strokes.count - 1] = replacement
+                    canvasView.drawing = d   // triggers drawingDidChange → saved
+                }
             }
+            self.growIfNeeded(canvasView)
+            self.onEndUsingTool?()
         }
-        growIfNeeded(canvasView)
-        onEndUsingTool?()
     }
 
     /// Endless margin: ink near the outer edge extends the writing space on that side.
