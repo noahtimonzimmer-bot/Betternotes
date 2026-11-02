@@ -25,6 +25,8 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     /// Draw a shape, rest the pencil briefly, lift → clean shape (any pen).
     var holdToShape = true
     private let holdObserver = HoldObserver(target: nil, action: nil)
+    /// Set when the shape was already placed while the pencil was resting.
+    private var snappedDuringHold = false
     /// When false, only the Pencil drives the camera lasso (fingers keep scrolling).
     var fingerDraws = false {
         didSet {
@@ -83,6 +85,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         addSubview(canvas)
         holdObserver.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
         canvas.addGestureRecognizer(holdObserver)
+        holdObserver.onHold = { [weak self] pts in self?.snapWhileHolding(pts) }
 
         cameraGesture.isEnabled = false
         cameraGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
@@ -324,7 +327,9 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         let expected = strokeCountAtToolStart + 1
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            if canvasView.tool is PKInkingTool,
+            if self.snappedDuringHold {
+                self.snappedDuringHold = false
+            } else if canvasView.tool is PKInkingTool,
                canvasView.drawing.strokes.count == expected,
                let last = canvasView.drawing.strokes.last {
                 let held = self.holdToShape && self.holdObserver.heldAtEnd
@@ -338,6 +343,33 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
             }
             self.growIfNeeded(canvasView)
             self.onEndUsingTool?()
+        }
+    }
+
+    /// Pencil rested while drawing: cancel the live PencilKit stroke and put the clean shape
+    /// in its place right away (the pencil is still down), with a small haptic tick.
+    private func snapWhileHolding(_ pts: [CGPoint]) {
+        guard holdToShape || mode == .shape, let ink = canvas.tool as? PKInkingTool else { return }
+        let size = CGSize(width: ink.width, height: ink.width)
+        let raw = pts.enumerated().map { i, p in
+            PKStrokePoint(location: p, timeOffset: TimeInterval(i) * 0.005, size: size,
+                          opacity: 1, force: 1, azimuth: 0, altitude: .pi / 2)
+        }
+        let rawStroke = PKStroke(ink: ink.ink, path: PKStrokePath(controlPoints: raw, creationDate: Date()))
+        guard let shape = ShapeRecognizer.shape(from: rawStroke) else { return }
+        let base = strokeCountAtToolStart
+        snappedDuringHold = true
+        // Toggling the drawing gesture ends the stroke in progress.
+        canvas.drawingGestureRecognizer.isEnabled = false
+        canvas.drawingGestureRecognizer.isEnabled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            var d = self.canvas.drawing
+            // PencilKit may have committed the partial stroke; replace it.
+            if d.strokes.count > base { d.strokes.removeLast(d.strokes.count - base) }
+            d.strokes.append(shape)
+            self.canvas.drawing = d
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }
     }
 

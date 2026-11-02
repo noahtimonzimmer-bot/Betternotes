@@ -194,8 +194,23 @@ enum ShapeRecognizer {
 final class HoldObserver: UIGestureRecognizer {
     var holdDuration: TimeInterval = 0.4
     private(set) var heldAtEnd = false
+    /// Fires while the pencil is still down and has rested for `holdDuration`; gets all points so far.
+    var onHold: (([CGPoint]) -> Void)?
+    private(set) var points: [CGPoint] = []
     private var lastMoveTime: TimeInterval = 0
     private var lastPoint: CGPoint = .zero
+    private var timer: Timer?
+    private var fired = false
+
+    private func restartTimer() {
+        timer?.invalidate()
+        guard onHold != nil, !fired else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: holdDuration, repeats: false) { [weak self] _ in
+            guard let self, !self.fired, self.points.count > 2 else { return }
+            self.fired = true
+            self.onHold?(self.points)
+        }
+    }
 
     override init(target: Any?, action: Selector?) {
         super.init(target: target, action: action)
@@ -210,27 +225,34 @@ final class HoldObserver: UIGestureRecognizer {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
         guard let t = touches.first else { return }
         heldAtEnd = false
+        fired = false
         lastPoint = t.location(in: view)
         lastMoveTime = t.timestamp
+        points = [lastPoint]
+        restartTimer()
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
         guard let t = touches.first else { return }
         for c in event.coalescedTouches(for: t) ?? [t] {
             let p = c.location(in: view)
+            points.append(p)
             if hypot(p.x - lastPoint.x, p.y - lastPoint.y) > 3 {
                 lastPoint = p
                 lastMoveTime = c.timestamp
+                restartTimer()
             }
         }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        timer?.invalidate()
         if let t = touches.first { heldAtEnd = t.timestamp - lastMoveTime >= holdDuration }
         state = .failed
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        timer?.invalidate()
         heldAtEnd = false
         state = .failed
     }
