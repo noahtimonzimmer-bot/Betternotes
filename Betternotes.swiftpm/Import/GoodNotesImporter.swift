@@ -25,6 +25,7 @@ enum GoodNotesImporter {
                 page.pdfPageIndex = max(0, (gp.pdfPage ?? 1) - 1)
             }
             var strokes = try file.strokes(on: gp)
+            var images = (try? file.images(on: gp)) ?? []
             if let size = gp.size {
                 page.width = size.width
                 page.height = size.height
@@ -36,8 +37,15 @@ enum GoodNotesImporter {
                     s.lines = s.lines.map { $0.map { CGPoint(x: $0.x - box.minX, y: $0.y - box.minY) } }
                     return s
                 }
+                images = images.map { var i = $0; i.frame = i.frame.offsetBy(dx: -box.minX, dy: -box.minY); return i }
                 page.width = box.width
                 page.height = box.height
+            }
+            for img in images {
+                guard let path = file.attachmentFiles[img.attachmentID], let data = try? file.data(path) else { continue }
+                let ext = data.starts(with: [0x89, 0x50, 0x4E, 0x47]) ? "png" : "jpg"
+                let name = store.addAttachment(data, ext: ext, to: doc)
+                page.images.append(ImageItem(frame: img.frame, file: name))
             }
             drawings.append((page, PKDrawing(strokes: strokes.flatMap(pkStrokes))))
             doc.pages.append(page)

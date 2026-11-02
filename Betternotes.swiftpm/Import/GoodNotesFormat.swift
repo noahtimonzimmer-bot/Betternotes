@@ -302,6 +302,28 @@ struct GoodNotesFile {
         return out
     }
 
+    struct GNImage { var frame: CGRect; var attachmentID: String }
+
+    /// Images placed on the page (body field 1): frame {1: origin, 2: size}, field 4 = attachment id.
+    func images(on page: GNPage) throws -> [GNImage] {
+        var out: [GNImage] = []
+        for file in page.layerFiles {
+            let msgs = try ProtoFields.stream(try GoodNotesFile.read(archive, file))
+            var k = 1
+            while k < msgs.count {
+                defer { k += 2 }
+                if try ProtoFields(msgs[k - 1]).int(3) == 1 { continue }   // deleted
+                guard let img = try ProtoFields(msgs[k]).message(1), let att = img.string(4),
+                      let frame = img.message(2), let o = frame.message(1), let s = frame.message(2) else { continue }
+                let rect = CGRect(x: CGFloat(o.float(1) ?? 0), y: CGFloat(o.float(2) ?? 0),
+                                  width: CGFloat(s.float(1) ?? 0), height: CGFloat(s.float(2) ?? 0))
+                guard rect.width > 1, rect.height > 1, rect.width.isFinite, rect.height.isFinite else { continue }
+                out.append(GNImage(frame: rect, attachmentID: att))
+            }
+        }
+        return out
+    }
+
     // MARK: helpers
 
     private static func read(_ archive: Archive, _ path: String) throws -> [UInt8] {
