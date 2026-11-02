@@ -50,6 +50,10 @@ final class ToolController: ObservableObject {
     @Published var width: CGFloat = 2.6
     /// Where to show the squeeze palette (editor coordinates); nil = hidden.
     @Published var paletteLocation: CGPoint?
+    /// Apple's ruler on the page (two fingers rotate/move it).
+    @Published var rulerActive = false
+    /// Saved pen + colour + width combinations.
+    @Published var favorites: [PenFavorite] = PenFavorite.load() { didSet { PenFavorite.save(favorites) } }
 
     let settings: AppSettings
     private var previousKind: Kind = .pen
@@ -82,6 +86,19 @@ final class ToolController: ObservableObject {
     func setColor(_ c: UIColor) {
         if kind == .marker { markerColor = c } else { color = c }
         if !kind.usesColor { select(previousKind.usesColor ? previousKind : .pen) }
+    }
+
+    func addFavorite() {
+        guard kind.usesColor else { return }
+        let f = PenFavorite(kind: kind.rawValue, colorHex: currentColor.hexString, width: width)
+        if !favorites.contains(f) { favorites.append(f) }
+    }
+
+    func apply(_ f: PenFavorite) {
+        guard let k = Kind(rawValue: f.kind) else { return }
+        select(k)
+        width = f.width
+        if k == .marker { markerColor = UIColor(hex: f.colorHex) } else { color = UIColor(hex: f.colorHex) }
     }
 
     func select(_ k: Kind) {
@@ -132,5 +149,21 @@ final class ToolController: ObservableObject {
         case .showColorPalette, .showInkAttributes, .showContextualPalette: return .toolPalette
         default: return .none
         }
+    }
+}
+
+struct PenFavorite: Codable, Hashable, Identifiable {
+    var kind: String
+    var colorHex: String
+    var width: CGFloat
+    var id: String { "\(kind)-\(colorHex)-\(width)" }
+
+    static func load() -> [PenFavorite] {
+        guard let d = UserDefaults.standard.data(forKey: "pen.favorites") else { return [] }
+        return (try? JSONDecoder().decode([PenFavorite].self, from: d)) ?? []
+    }
+
+    static func save(_ f: [PenFavorite]) {
+        if let d = try? JSONEncoder().encode(f) { UserDefaults.standard.set(d, forKey: "pen.favorites") }
     }
 }

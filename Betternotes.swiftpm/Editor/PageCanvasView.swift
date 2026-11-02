@@ -64,6 +64,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     }
 
     private var scale: CGFloat = 0
+    private var marginPatternScale: CGFloat = 0
     private var zoom: CGFloat = 1
     private var renderedWidth: CGFloat = 0
     private var applying = false
@@ -92,8 +93,9 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         super.init(frame: .zero)
         backgroundColor = .clear
 
-        marginBackground.backgroundColor = UIColor.secondarySystemBackground
-        marginBackground.layer.cornerRadius = 8
+        marginBackground.backgroundColor = UIColor(white: 0.975, alpha: 1)
+        marginBackground.layer.cornerRadius = 10
+        marginBackground.layer.cornerCurve = .continuous
         addSubview(marginBackground)
 
         paper.backgroundColor = .white
@@ -164,6 +166,10 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         scale = s
         marginBackground.frame = bounds
         marginBackground.isHidden = marginLeft + marginRight == 0
+        if changed || marginPatternScale != s {
+            marginPatternScale = s
+            marginBackground.backgroundColor = PageBackground.dotPattern(scale: s, originX: marginLeft * s)
+        }
         paper.frame = viewRect(CGRect(origin: .zero, size: page.size))
         itemsLayer.frame = bounds
         canvas.frame = bounds

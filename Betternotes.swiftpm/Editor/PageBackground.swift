@@ -45,6 +45,32 @@ enum PageBackground {
         }
     }
 
+    static let dotStep: CGFloat = 40
+    static let dotRadius: CGFloat = 1.4
+    static let dotColor = UIColor(white: 0.45, alpha: 0.32)
+
+    /// Repeating tile for the dotted area around pages; dots line up with the page grid.
+    /// `scale` = points per page unit, `originX` = x of the paper's left edge in the view.
+    static func dotPattern(scale: CGFloat, originX: CGFloat) -> UIColor {
+        let s = max(4, dotStep * scale)
+        let r = max(0.7, dotRadius * scale)
+        let ox = originX.truncatingRemainder(dividingBy: s)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = UIScreen.main.scale
+        let tile = UIGraphicsImageRenderer(size: CGSize(width: s, height: s), format: format).image { ctx in
+            UIColor(white: 0.975, alpha: 1).setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: s, height: s))
+            dotColor.setFill()
+            // dot sits on the tile corner row; draw wrapped copies so halves meet across tiles
+            for dx in [ox - s, ox, ox + s] {
+                for dy in [0, s] {
+                    ctx.cgContext.fillEllipse(in: CGRect(x: dx - r, y: dy - r, width: 2 * r, height: 2 * r))
+                }
+            }
+        }
+        return UIColor(patternImage: tile)
+    }
+
     /// Draws ruling in a context whose page origin is (0,0); `unit` = pixels per page unit.
     static func drawTemplate(_ t: PageTemplate, in c: CGContext, size: CGSize, unit: CGFloat) {
         let line = UIColor(red: 0.62, green: 0.72, blue: 0.86, alpha: 0.7).cgColor
@@ -68,7 +94,9 @@ enum PageBackground {
             while y < size.height { c.move(to: CGPoint(x: 0, y: y)); c.addLine(to: CGPoint(x: size.width, y: y)); y += step }
             c.strokePath()
         case .dotted:
-            let step = 40 * unit, r = max(1, 1.8 * unit)
+            // subtle grey dots, same grid as the dotted writing area beside the page
+            c.setFillColor(dotColor.cgColor)
+            let step = dotStep * unit, r = max(0.8, dotRadius * unit)
             var y = step
             while y < size.height {
                 var x = step

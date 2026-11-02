@@ -255,7 +255,7 @@ struct DocumentCanvas: UIViewRepresentable {
     }
 
     func updateUIView(_ v: DocumentScrollView, context: Context) {
-        _ = tools.kind; _ = tools.color; _ = tools.markerColor; _ = tools.width   // observe tool changes
+        _ = tools.kind; _ = tools.color; _ = tools.markerColor; _ = tools.width; _ = tools.rulerActive   // observe tool changes
         _ = settings.marginRatio; _ = settings.exportMarginNotes; _ = settings.straightenLines; _ = settings.holdToShape; _ = settings.onlyPencilDraws
         v.setPages(store.document(docID)?.pages ?? [])
         v.forEachPageView { view, page in context.coordinator.configure(view, page: page) }
@@ -320,6 +320,7 @@ struct DocumentCanvas: UIViewRepresentable {
             v.canvas.drawingPolicy = settings.onlyPencilDraws ? .pencilOnly : .anyInput
             v.fingerDraws = !settings.onlyPencilDraws
             v.canvas.tool = tools.tool
+            v.canvas.isRulerActive = tools.rulerActive
             v.mode = tools.pageMode
         }
 
@@ -371,6 +372,39 @@ struct ToolBar: View {
                     .overlay(Circle().stroke(Color.primary.opacity(0.6), lineWidth: tools.currentColor == c ? 2 : 0))
                     .onTapGesture { tools.setColor(c) }
             }
+            Capsule().fill(Color.secondary.opacity(0.3)).frame(width: 1, height: 24).padding(.horizontal, 4)
+            Button { tools.rulerActive.toggle() } label: {
+                Image(systemName: "ruler")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(tools.rulerActive ? Color.white : Color.primary)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(tools.rulerActive ? Color.accentColor : Color.clear))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Lineal")
+            ForEach(tools.favorites) { f in
+                Button { tools.apply(f) } label: {
+                    Image(systemName: ToolController.Kind(rawValue: f.kind)?.symbol ?? "pencil.tip")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(Color(uiColor: UIColor(hex: f.colorHex))))
+                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .shadow(color: .black.opacity(0.2), radius: 1)
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button("Favorit entfernen", role: .destructive) { tools.favorites.removeAll { $0 == f } }
+                }
+            }
+            Button { tools.addFavorite() } label: {
+                Image(systemName: "star")
+                    .font(.system(size: 15, weight: .medium))
+                    .frame(width: 32, height: 36)
+            }
+            .buttonStyle(.plain)
+            .disabled(!tools.kind.usesColor)
+            .accessibilityLabel("Aktuellen Stift als Favorit speichern")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
