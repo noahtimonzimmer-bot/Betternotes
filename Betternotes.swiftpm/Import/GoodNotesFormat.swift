@@ -342,10 +342,13 @@ struct GoodNotesFile {
                       !text.isEmpty else { continue }
                 let o = t.message(20)?.message(1)
                 let size = body.message(2)
-                let font = body.message(5)?.message(1)?.float(40) ?? 24
-                out.append(GNText(frame: CGRect(x: CGFloat(o?.float(1) ?? 0), y: CGFloat(o?.float(2) ?? 0),
-                                                width: CGFloat(size?.float(1) ?? 400), height: CGFloat(size?.float(2) ?? 60)),
-                                  text: text, fontSize: CGFloat(font)))
+                let font: Float = body.message(5)?.message(1)?.float(40) ?? 24
+                let x: Float = o?.float(1) ?? 0
+                let y: Float = o?.float(2) ?? 0
+                let w: Float = size?.float(1) ?? 400
+                let h: Float = size?.float(2) ?? 60
+                let frame = CGRect(x: CGFloat(x), y: CGFloat(y), width: CGFloat(w), height: CGFloat(h))
+                out.append(GNText(frame: frame, text: text, fontSize: CGFloat(font)))
             }
         }
         return out

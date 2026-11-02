@@ -78,8 +78,10 @@ enum PDFExporter {
                     let objectFrames: [CGRect] = page.images.map { $0.frame } + page.textBoxes.map { $0.frame }
                     for f in objectFrames { used = used.union(f) }
                     if !used.isNull {
-                        let minX = min(0, used.minX - 16), maxX = max(page.width, used.maxX + 16)
-                        rect = CGRect(x: minX, y: 0, width: maxX - minX, height: page.height)
+                        let pageW = CGFloat(page.width), pageH = CGFloat(page.height)
+                        let minX: CGFloat = min(CGFloat(0), used.minX - 16)
+                        let maxX: CGFloat = max(pageW, used.maxX + 16)
+                        rect = CGRect(x: minX, y: 0, width: maxX - minX, height: pageH)
                     }
                 }
                 // PDF points: GoodNotes-style page units are ~1.8335 × points.
