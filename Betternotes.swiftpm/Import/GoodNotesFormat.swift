@@ -324,6 +324,33 @@ struct GoodNotesFile {
         return out
     }
 
+    struct GNText { var frame: CGRect; var text: String; var fontSize: CGFloat }
+
+    /// Text boxes (body field 21): 20.1 origin, 32.2 size, 32.1.2 bv4-compressed text message
+    /// whose field 1 is the plain string, 32.5.1.40 font size. Verified on one sample only.
+    func texts(on page: GNPage) throws -> [GNText] {
+        var out: [GNText] = []
+        for file in page.layerFiles {
+            let msgs = try ProtoFields.stream(try GoodNotesFile.read(archive, file))
+            var k = 1
+            while k < msgs.count {
+                defer { k += 2 }
+                if try ProtoFields(msgs[k - 1]).int(3) == 1 { continue }   // deleted
+                guard let t = try ProtoFields(msgs[k]).message(21), let body = t.message(32),
+                      let blob = body.message(1)?.bytes(2),
+                      let textMsg = try? ProtoFields(try BV4.decode(blob)), let text = textMsg.string(1),
+                      !text.isEmpty else { continue }
+                let o = t.message(20)?.message(1)
+                let size = body.message(2)
+                let font = body.message(5)?.message(1)?.float(40) ?? 24
+                out.append(GNText(frame: CGRect(x: CGFloat(o?.float(1) ?? 0), y: CGFloat(o?.float(2) ?? 0),
+                                                width: CGFloat(size?.float(1) ?? 400), height: CGFloat(size?.float(2) ?? 60)),
+                                  text: text, fontSize: CGFloat(font)))
+            }
+        }
+        return out
+    }
+
     // MARK: helpers
 
     private static func read(_ archive: Archive, _ path: String) throws -> [UInt8] {

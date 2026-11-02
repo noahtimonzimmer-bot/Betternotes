@@ -26,6 +26,7 @@ enum GoodNotesImporter {
             }
             var strokes = try file.strokes(on: gp)
             var images = (try? file.images(on: gp)) ?? []
+            var boardOffset = CGPoint.zero
             if let size = gp.size {
                 page.width = size.width
                 page.height = size.height
@@ -38,6 +39,7 @@ enum GoodNotesImporter {
                     return s
                 }
                 images = images.map { var i = $0; i.frame = i.frame.offsetBy(dx: -box.minX, dy: -box.minY); return i }
+                boardOffset = box.origin
                 page.width = box.width
                 page.height = box.height
             }
@@ -46,6 +48,11 @@ enum GoodNotesImporter {
                 let ext = data.starts(with: [0x89, 0x50, 0x4E, 0x47]) ? "png" : "jpg"
                 let name = store.addAttachment(data, ext: ext, to: doc)
                 page.images.append(ImageItem(frame: img.frame, file: name))
+            }
+            for t in (try? file.texts(on: gp)) ?? [] {
+                var frame = t.frame.offsetBy(dx: -boardOffset.x, dy: -boardOffset.y)
+                frame.size.width = max(frame.width, 80)
+                page.textBoxes.append(TextBox(frame: frame, text: t.text, fontSize: t.fontSize))
             }
             drawings.append((page, PKDrawing(strokes: strokes.flatMap(pkStrokes))))
             doc.pages.append(page)
