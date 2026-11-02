@@ -5,7 +5,10 @@ import UIKit
 protocol DocumentPageProvider: AnyObject {
     func makePageView(for page: NotePage) -> PageCanvasView
     func configure(_ view: PageCanvasView, page: NotePage)
-    func marginRatio(for page: NotePage) -> CGFloat
+    /// Default writing space per side (page units); sets the shared on-screen scale.
+    func defaultMargin(for page: NotePage) -> CGFloat
+    /// Actual (possibly extended) writing space left and right.
+    func margins(for page: NotePage) -> (left: CGFloat, right: CGFloat)
     func currentPageChanged(_ index: Int)
 }
 
@@ -41,7 +44,10 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
     // MARK: Data
 
     func setPages(_ new: [NotePage]) {
-        let sig = new.map { p in "\(p.id)|\(p.width)|\(p.height)|\(provider?.marginRatio(for: p) ?? 0)" }
+        let sig = new.map { p -> String in
+            let m = provider?.margins(for: p) ?? (0, 0)
+            return "\(p.id)|\(p.width)|\(p.height)|\(m.left)|\(m.right)|\(provider?.defaultMargin(for: p) ?? 0)"
+        }
         pages = new
         for (id, v) in views {
             if let p = new.first(where: { $0.id == id }) { v.update(page: p) } else { v.removeFromSuperview(); views[id] = nil }
@@ -72,18 +78,33 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
     }
 
     private func relayout() {
-        if zoomScale != 1 { setZoomScale(1, animated: false) }
+        // Keep zoom and position when pages change size (e.g. the margin grows while writing).
+        let zoom = zoomScale, offset = contentOffset
+        if zoom != 1 { setZoomScale(1, animated: false) }
+        defer {
+            if zoom != 1 {
+                setZoomScale(zoom, animated: false)
+                contentOffset = offset
+            }
+        }
         laidOutWidth = bounds.width
         let side: CGFloat = 8
         let width = bounds.width - 2 * side
         var y = spacing
+        // Same scale as if every page had the default margins; extended margins make a page
+        // wider than the screen (scroll sideways) instead of shrinking the paper.
         frames = pages.map { p in
-            let m = (provider?.marginRatio(for: p) ?? 0) * p.width
-            let h = width * p.height / (p.width + 2 * m)
-            defer { y += h + spacing }
-            return CGRect(x: side, y: y, width: width, height: h)
+            let d = provider?.defaultMargin(for: p) ?? 0
+            let m = provider?.margins(for: p) ?? (d, d)
+            let k = width / (p.width + 2 * d)
+            let f = CGRect(x: side + (d - m.left) * k, y: y, width: (p.width + m.left + m.right) * k, height: p.height * k)
+            y += f.height + spacing
+            return f
         }
-        content.frame = CGRect(x: 0, y: 0, width: bounds.width, height: y)
+        let minX = min(side, frames.map(\.minX).min() ?? side)
+        frames = frames.map { $0.offsetBy(dx: side - minX, dy: 0) }
+        let maxX = (frames.map(\.maxX).max() ?? bounds.width) + side
+        content.frame = CGRect(x: 0, y: 0, width: max(bounds.width, maxX), height: y)
         contentSize = content.frame.size
         for (i, p) in pages.enumerated() { views[p.id]?.frame = frames[i] }
     }

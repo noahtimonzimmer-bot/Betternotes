@@ -36,6 +36,8 @@ final class AppSettings: ObservableObject {
     @Published var eraserWholeStroke: Bool { didSet { d.set(eraserWholeStroke, forKey: "eraser.wholeStroke") } }
     /// Extra writing space left and right of each page, as a fraction of the page width.
     @Published var marginRatio: Double { didSet { d.set(marginRatio, forKey: "page.margin") } }
+    /// PDF export: include notes written in the margin (else they stay app-only).
+    @Published var exportMarginNotes: Bool { didSet { d.set(exportMarginNotes, forKey: "export.marginNotes") } }
     @Published var straightenLines: Bool { didSet { d.set(straightenLines, forKey: "ink.straighten") } }
 
     init() {
@@ -46,6 +48,7 @@ final class AppSettings: ObservableObject {
             "eraser.wholeStroke": true,
             "page.margin": 0.25,
             "ink.straighten": true,
+            "export.marginNotes": true,
         ])
         doubleTap = PencilAction(rawValue: d.string(forKey: "pencil.doubleTap") ?? "") ?? .temporaryEraser
         squeeze = PencilAction(rawValue: d.string(forKey: "pencil.squeeze") ?? "") ?? .toolPalette
@@ -53,5 +56,6 @@ final class AppSettings: ObservableObject {
         eraserWholeStroke = d.bool(forKey: "eraser.wholeStroke")
         marginRatio = max(0.15, d.double(forKey: "page.margin"))
         straightenLines = d.bool(forKey: "ink.straighten")
+        exportMarginNotes = d.bool(forKey: "export.marginNotes")
     }
 }

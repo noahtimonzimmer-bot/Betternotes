@@ -22,13 +22,14 @@ struct SettingsView: View {
                 Toggle("Radierer löscht ganze Striche", isOn: $settings.eraserWholeStroke)
             }
             Section {
-                Picker("Schreibrand neben PDF", selection: $settings.marginRatio) {
+                Toggle("Randnotizen im PDF-Export", isOn: $settings.exportMarginNotes)
+                Picker("Start-Schreibrand neben der Seite", selection: $settings.marginRatio) {
                     Text("Schmal").tag(0.15)
                     Text("Mittel").tag(0.25)
                     Text("Breit").tag(0.4)
                 }
             } footer: {
-                Text("Wie in OneNote: Platz links und rechts der Seite für eigene Notizen.")
+                Text("Schreibst du nahe am Rand, wächst der Platz automatisch weiter – endlos. Ohne „Randnotizen im PDF-Export“ bleiben sie nur in Betternotes sichtbar; das PDF hat dann die normale Seitengröße.")
             }
             Section {
                 if OneDriveSync.clientID.hasPrefix("REPLACE") {

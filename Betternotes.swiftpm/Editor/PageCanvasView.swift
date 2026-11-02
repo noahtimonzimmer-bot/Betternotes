@@ -17,7 +17,10 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
 
     private(set) var page: NotePage
     private(set) var pageDrawing: PKDrawing
-    var margin: CGFloat = 0 { didSet { if margin != oldValue { scale = 0; setNeedsLayout() } } }
+    var marginLeft: CGFloat = 0 { didSet { if marginLeft != oldValue { scale = 0; setNeedsLayout() } } }
+    var marginRight: CGFloat = 0 { didSet { if marginRight != oldValue { scale = 0; setNeedsLayout() } } }
+    /// Writing close to an outer edge adds this much space on that side (page units); 0 = fixed.
+    var growStep: CGFloat = 0
     var straighten = true
     /// When false, only the Pencil drives the camera lasso (fingers keep scrolling).
     var fingerDraws = false {
@@ -90,7 +93,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     // MARK: Geometry
 
     private var toView: CGAffineTransform {
-        CGAffineTransform(scaleX: scale, y: scale).translatedBy(x: margin, y: 0)
+        CGAffineTransform(scaleX: scale, y: scale).translatedBy(x: marginLeft, y: 0)
     }
 
     func viewRect(_ r: CGRect) -> CGRect { r.applying(toView) }
@@ -98,12 +101,12 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let s = bounds.width / (page.size.width + 2 * margin)
+        let s = bounds.width / (page.size.width + marginLeft + marginRight)
         guard s.isFinite, s > 0 else { return }
         let changed = s != scale
         scale = s
         marginBackground.frame = bounds
-        marginBackground.isHidden = margin == 0
+        marginBackground.isHidden = marginLeft + marginRight == 0
         paper.frame = viewRect(CGRect(origin: .zero, size: page.size))
         itemsLayer.frame = bounds
         canvas.frame = bounds
@@ -228,7 +231,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
 
     @objc private func tapToCreateText(_ g: UITapGestureRecognizer) {
         let p = pagePoint(g.location(in: self))
-        let box = TextBox(frame: CGRect(x: p.x, y: p.y - 20, width: min(600, page.size.width - p.x + margin), height: 60))
+        let box = TextBox(frame: CGRect(x: p.x, y: p.y - 20, width: min(600, page.size.width - p.x + marginRight), height: 60))
         page.textBoxes.append(box)
         syncItems()
         textViews[box.id]?.becomeFirstResponder()
@@ -322,7 +325,27 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
                 canvasView.drawing = d   // triggers drawingDidChange → saved
             }
         }
+        growIfNeeded(canvasView)
         onEndUsingTool?()
+    }
+
+    /// Endless margin: ink near the outer edge extends the writing space on that side.
+    private func growIfNeeded(_ canvasView: PKCanvasView) {
+        guard growStep > 0, scale > 0, canvasView.tool is PKInkingTool,
+              let last = canvasView.drawing.strokes.last else { return }
+        let b = last.renderBounds.applying(toView.inverted())
+        let trigger = growStep * 0.35
+        var p = page
+        if b.maxX > page.size.width + marginRight - trigger {
+            p.marginRight = Double(b.maxX - page.size.width + growStep)
+        }
+        if b.minX < -marginLeft + trigger {
+            p.marginLeft = Double(-b.minX + growStep)
+        }
+        if p != page {
+            page = p
+            commitPage()   // document view relayouts; margins are applied via configure
+        }
     }
 
     // MARK: Camera lasso – circle an area, it is copied as an image

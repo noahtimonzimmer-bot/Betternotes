@@ -157,7 +157,7 @@ struct EditorView: View {
             } label: { Image(systemName: "photo.badge.plus") }
             Button { showSearch = true } label: { Image(systemName: "magnifyingglass") }
             Button {
-                do { exportURL = try PDFExporter.export(doc, store: store, marginRatio: settings.marginRatio) }
+                do { exportURL = try PDFExporter.export(doc, store: store, includeMarginNotes: settings.exportMarginNotes) }
                 catch { model.show("Export fehlgeschlagen: \(error.localizedDescription)") }
             } label: { Image(systemName: "square.and.arrow.up") }
         }
@@ -218,7 +218,7 @@ struct DocumentCanvas: UIViewRepresentable {
 
     func updateUIView(_ v: DocumentScrollView, context: Context) {
         _ = tools.kind; _ = tools.color; _ = tools.markerColor; _ = tools.width   // observe tool changes
-        _ = settings.marginRatio; _ = settings.straightenLines; _ = settings.onlyPencilDraws
+        _ = settings.marginRatio; _ = settings.exportMarginNotes; _ = settings.straightenLines; _ = settings.onlyPencilDraws
         v.setPages(store.document(docID)?.pages ?? [])
         v.forEachPageView { view, page in context.coordinator.configure(view, page: page) }
     }
@@ -234,7 +234,12 @@ struct DocumentCanvas: UIViewRepresentable {
             pencil = PencilGestureHandler(tools: tools)
         }
 
-        func marginRatio(for page: NotePage) -> CGFloat { page.isBoard ? 0 : settings.marginRatio }
+        func defaultMargin(for page: NotePage) -> CGFloat { page.isBoard ? 0 : settings.marginRatio * page.width }
+
+        func margins(for page: NotePage) -> (left: CGFloat, right: CGFloat) {
+            let d = defaultMargin(for: page)
+            return (max(d, page.marginLeft.map { CGFloat($0) } ?? d), max(d, page.marginRight.map { CGFloat($0) } ?? d))
+        }
 
         func makePageView(for page: NotePage) -> PageCanvasView {
             guard let doc = store.document(docID) else { return PageCanvasView(page: page, drawing: PKDrawing()) }
@@ -261,7 +266,10 @@ struct DocumentCanvas: UIViewRepresentable {
         }
 
         func configure(_ v: PageCanvasView, page: NotePage) {
-            v.margin = marginRatio(for: page) * page.width
+            let m = margins(for: page)
+            v.marginLeft = m.left
+            v.marginRight = m.right
+            v.growStep = page.width * 0.5
             v.straighten = settings.straightenLines
             v.canvas.drawingPolicy = settings.onlyPencilDraws ? .pencilOnly : .anyInput
             v.fingerDraws = !settings.onlyPencilDraws

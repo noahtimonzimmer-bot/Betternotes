@@ -77,6 +77,9 @@ struct NotePage: Identifiable, Codable, Hashable {
     var images: [ImageItem] = []
     /// Title in the notebook outline (GoodNotes "Gliederung"); nil = not in outline.
     var bookmark: String?
+    /// Writing space left/right of the paper (page units). nil = app default; grows when writing near the edge.
+    var marginLeft: Double?
+    var marginRight: Double?
 
     var size: CGSize { CGSize(width: width, height: height) }
 
@@ -102,6 +105,8 @@ struct NotePage: Identifiable, Codable, Hashable {
         textBoxes = try c.decodeIfPresent([TextBox].self, forKey: .textBoxes) ?? []
         images = try c.decodeIfPresent([ImageItem].self, forKey: .images) ?? []
         bookmark = try c.decodeIfPresent(String.self, forKey: .bookmark)
+        marginLeft = try c.decodeIfPresent(Double.self, forKey: .marginLeft)
+        marginRight = try c.decodeIfPresent(Double.self, forKey: .marginRight)
     }
 
     /// Fresh copy with a new id (drawing is copied separately by the store).

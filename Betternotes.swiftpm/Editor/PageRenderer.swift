@@ -61,9 +61,10 @@ enum PageRenderer {
 }
 
 enum PDFExporter {
-    /// Writes the notebook as a PDF. Pages grow to include the writing margin if it contains ink.
+    /// Writes the notebook as a PDF. With `includeMarginNotes`, pages widen to include ink and
+    /// objects in the writing margin; otherwise the margin stays app-only and pages keep paper size.
     @MainActor
-    static func export(_ doc: NoteDocument, store: DocumentStore, marginRatio: CGFloat) throws -> URL {
+    static func export(_ doc: NoteDocument, store: DocumentStore, includeMarginNotes: Bool) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(doc.title.replacingOccurrences(of: "/", with: "-"))
             .appendingPathExtension("pdf")
@@ -71,11 +72,14 @@ enum PDFExporter {
         try renderer.writePDF(to: url) { ctx in
             for page in doc.pages {
                 let drawing = store.drawing(for: page, in: doc)
-                let m = page.isBoard ? 0 : marginRatio * page.width
                 var rect = CGRect(origin: .zero, size: page.size)
-                let ink = drawing.bounds
-                if !ink.isNull, ink.minX < 0 || ink.maxX > page.width {
-                    rect = CGRect(x: -m, y: 0, width: page.width + 2 * m, height: page.height)
+                if includeMarginNotes {
+                    var used = drawing.bounds
+                    for f in page.images.map(\.frame) + page.textBoxes.map(\.frame) { used = used.union(f) }
+                    if !used.isNull {
+                        let minX = min(0, used.minX - 16), maxX = max(page.width, used.maxX + 16)
+                        rect = CGRect(x: minX, y: 0, width: maxX - minX, height: page.height)
+                    }
                 }
                 // PDF points: GoodNotes-style page units are ~1.8335 × points.
                 let k = 595.28 / 1091.64
