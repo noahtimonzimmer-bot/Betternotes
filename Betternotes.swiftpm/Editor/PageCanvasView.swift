@@ -54,6 +54,14 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     private lazy var pasteMenu = UIEditMenuInteraction(delegate: self)
     private lazy var pressGesture = UILongPressGestureRecognizer(target: self, action: #selector(longPress(_:)))
     private var pastePoint: CGPoint = .zero
+
+    // Object selection (photos and text boxes): tap to select, drag to move, handle to resize.
+    fileprivate var selectedObject: UUID?
+    fileprivate let objectOverlay = UIView()
+    fileprivate let objectHandle = UIView(frame: CGRect(x: 0, y: 0, width: 30, height: 30))
+    fileprivate let objectBar = UIStackView()
+    fileprivate lazy var objectTap = UITapGestureRecognizer(target: self, action: #selector(objectTapped(_:)))
+    fileprivate var editingText: UUID?
     var onPageChange: ((NotePage) -> Void)?
     var onEndUsingTool: (() -> Void)?
     var onCapture: ((UIImage) -> Void)?
@@ -127,6 +135,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         }
         if page.allLayers.first(where: { $0.id == activeLayerID })?.hidden == true { canvas.isHidden = true }
         setupSelectionUI()
+        setupObjectSelection()
         addInteraction(pasteMenu)
         pressGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
         pressGesture.minimumPressDuration = 0.5
@@ -175,6 +184,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         canvas.frame = bounds
         for l in layerCanvases { l.canvas.frame = bounds }
         layoutItems()
+        layoutObjectSelection()
         if changed {
             applying = true
             canvas.drawing = pageDrawing.transformed(using: toView)
@@ -210,17 +220,22 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
 
     private func applyMode() {
         let objects = mode == .objects
-        canvas.isUserInteractionEnabled = mode == .ink || mode == .shape
+        canvas.isUserInteractionEnabled = (mode == .ink || mode == .shape) && selectedObject == nil && editingText == nil
+        // fingers always select objects; the pencil too when it is not drawing
+        var tapTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+        if mode == .objects || mode == .lasso { tapTypes.append(NSNumber(value: UITouch.TouchType.pencil.rawValue)) }
+        objectTap.allowedTouchTypes = tapTypes
         cameraGesture.isEnabled = mode == .camera
         selectGesture.isEnabled = mode == .lasso
         clearSelectionTap.isEnabled = mode == .lasso
         if mode != .lasso { clearSelection() }
         newTextGesture.isEnabled = objects
-        itemsLayer.isUserInteractionEnabled = objects
-        for tv in textViews.values {
-            tv.isEditable = objects
-            tv.isSelectable = objects
-            if !objects, tv.isFirstResponder { tv.resignFirstResponder() }
+        itemsLayer.isUserInteractionEnabled = objects || editingText != nil
+        for (id, tv) in textViews {
+            let editable = objects || id == editingText
+            tv.isEditable = editable
+            tv.isSelectable = editable
+            if !editable, tv.isFirstResponder { tv.resignFirstResponder() }
         }
     }
 
@@ -348,6 +363,10 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
 
     func textViewDidEndEditing(_ tv: UITextView) {
         guard let id = itemID(for: tv) else { return }
+        if editingText == id {
+            editingText = nil
+            applyMode()
+        }
         if tv.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             page.textBoxes.removeAll { $0.id == id }
             syncItems()
@@ -839,6 +858,198 @@ extension PageCanvasView {
             self.syncItems()
             self.commitPage()
         }
+    }
+}
+
+// MARK: - Object selection (photos, text boxes)
+
+extension PageCanvasView {
+    fileprivate func setupObjectSelection() {
+        objectOverlay.layer.borderColor = UIColor.systemBlue.cgColor
+        objectOverlay.layer.borderWidth = 2
+        objectOverlay.layer.cornerRadius = 4
+        objectOverlay.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.04)
+        objectOverlay.accessibilityIdentifier = "bn.item"   // fingers here move the object, not the page
+        objectOverlay.isHidden = true
+        objectOverlay.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(moveObject(_:))))
+        addSubview(objectOverlay)
+
+        objectHandle.backgroundColor = .systemBlue
+        objectHandle.layer.cornerRadius = 15
+        objectHandle.layer.borderColor = UIColor.white.cgColor
+        objectHandle.layer.borderWidth = 3
+        objectHandle.accessibilityIdentifier = "bn.item"
+        objectHandle.isHidden = true
+        objectHandle.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(resizeObject(_:))))
+        addSubview(objectHandle)
+
+        objectBar.axis = .horizontal
+        objectBar.spacing = 2
+        objectBar.isLayoutMarginsRelativeArrangement = true
+        objectBar.layoutMargins = UIEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
+        objectBar.backgroundColor = .secondarySystemBackground
+        objectBar.layer.cornerRadius = 12
+        objectBar.layer.shadowOpacity = 0.2
+        objectBar.layer.shadowRadius = 6
+        objectBar.isHidden = true
+        addSubview(objectBar)
+
+        objectTap.cancelsTouchesInView = false
+        addGestureRecognizer(objectTap)
+    }
+
+    private func objectFrame(_ id: UUID) -> CGRect? {
+        page.textBoxes.first { $0.id == id }?.frame ?? page.images.first { $0.id == id }?.frame
+    }
+
+    @objc fileprivate func objectTapped(_ g: UITapGestureRecognizer) {
+        guard scale > 0, editingText == nil else { return }
+        let p = pagePoint(g.location(in: self))
+        // text boxes lie above images; later items above earlier ones
+        let hit = page.textBoxes.reversed().first { $0.frame.contains(p) }?.id
+            ?? page.images.reversed().first { $0.frame.contains(p) }?.id
+        if let hit {
+            if mode == .objects, page.textBoxes.contains(where: { $0.id == hit }) { return }  // tap edits text there
+            selectObject(hit)
+        } else if selectedObject != nil {
+            deselectObject()
+        }
+    }
+
+    func selectObject(_ id: UUID) {
+        selectedObject = id
+        applyMode()
+        rebuildObjectBar()
+        layoutObjectSelection()
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    func deselectObject() {
+        selectedObject = nil
+        layoutObjectSelection()
+        applyMode()
+    }
+
+    fileprivate func layoutObjectSelection() {
+        guard let id = selectedObject, let f = objectFrame(id), scale > 0 else {
+            if selectedObject != nil, scale > 0 {   // object was deleted elsewhere: unlock the pen
+                selectedObject = nil
+                applyMode()
+            }
+            objectOverlay.isHidden = true
+            objectHandle.isHidden = true
+            objectBar.isHidden = true
+            return
+        }
+        let r = viewRect(f).insetBy(dx: -4, dy: -4)
+        objectOverlay.frame = r
+        objectHandle.center = CGPoint(x: r.maxX, y: r.maxY)
+        let size = objectBar.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+        let x = min(max(r.midX - size.width / 2, 4), max(4, bounds.width - size.width - 4))
+        let y = r.minY - size.height - 10 > 0 ? r.minY - size.height - 10 : r.maxY + 20
+        objectBar.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+        for v in [objectOverlay, objectHandle, objectBar] as [UIView] {
+            v.isHidden = false
+            bringSubviewToFront(v)
+        }
+    }
+
+    private func rebuildObjectBar() {
+        objectBar.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        guard let id = selectedObject else { return }
+        func add(_ symbol: String, _ label: String, _ action: @escaping () -> Void) {
+            let b = UIButton(type: .system, primaryAction: UIAction { _ in action() })
+            b.setImage(UIImage(systemName: symbol), for: .normal)
+            b.accessibilityLabel = label
+            b.widthAnchor.constraint(equalToConstant: 40).isActive = true
+            objectBar.addArrangedSubview(b)
+        }
+        if page.images.contains(where: { $0.id == id }) {
+            add("crop", "Zuschneiden") { [weak self] in self?.deselectObject(); self?.onRequestCrop?(id) }
+            add("doc.on.doc", "Kopieren") { [weak self] in
+                if let v = self?.imageViews[id], let img = v.image { self?.onCapture?(img) }
+            }
+            add("square.3.layers.3d.top.filled", "Nach vorne") { [weak self] in self?.bringToFront(id) }
+        } else {
+            add("character.cursor.ibeam", "Bearbeiten") { [weak self] in self?.editText(id) }
+            add("textformat.size.larger", "Größer") { [weak self] in self?.scaleFont(id, by: 1.15) }
+            add("textformat.size.smaller", "Kleiner") { [weak self] in self?.scaleFont(id, by: 1 / 1.15) }
+            add("doc.on.doc", "Kopieren") { [weak self] in
+                UIPasteboard.general.string = self?.page.textBoxes.first { $0.id == id }?.text
+            }
+        }
+        add("trash", "Löschen") { [weak self] in
+            guard let self else { return }
+            self.page.textBoxes.removeAll { $0.id == id }
+            self.page.images.removeAll { $0.id == id }
+            self.deselectObject()
+            self.syncItems()
+            self.commitPage()
+        }
+    }
+
+    private func editText(_ id: UUID) {
+        deselectObject()
+        editingText = id
+        applyMode()
+        DispatchQueue.main.async { [weak self] in self?.textViews[id]?.becomeFirstResponder() }
+    }
+
+    private func scaleFont(_ id: UUID, by k: CGFloat) {
+        guard let i = page.textBoxes.firstIndex(where: { $0.id == id }) else { return }
+        page.textBoxes[i].fontSize = min(200, max(8, page.textBoxes[i].fontSize * k))
+        layoutItems()
+        if let tv = textViews[id], scale > 0 {
+            let fit = tv.sizeThatFits(CGSize(width: tv.bounds.width, height: .greatestFiniteMagnitude))
+            page.textBoxes[i].frame.size.height = max(30, fit.height / scale)
+            layoutItems()
+        }
+        layoutObjectSelection()
+        commitPage()
+    }
+
+    private func bringToFront(_ id: UUID) {
+        guard let i = page.images.firstIndex(where: { $0.id == id }) else { return }
+        let item = page.images.remove(at: i)
+        page.images.append(item)
+        if let v = imageViews[id] { itemsLayer.insertSubview(v, at: page.images.count - 1) }
+        commitPage()
+    }
+
+    @objc fileprivate func moveObject(_ g: UIPanGestureRecognizer) {
+        guard let id = selectedObject, scale > 0 else { return }
+        let t = g.translation(in: self)
+        g.setTranslation(.zero, in: self)
+        let dx = t.x / scale, dy = t.y / scale
+        if let i = page.textBoxes.firstIndex(where: { $0.id == id }) {
+            page.textBoxes[i].frame = page.textBoxes[i].frame.offsetBy(dx: dx, dy: dy)
+        } else if let i = page.images.firstIndex(where: { $0.id == id }) {
+            page.images[i].frame = page.images[i].frame.offsetBy(dx: dx, dy: dy)
+        }
+        layoutItems()
+        layoutObjectSelection()
+        if g.state == .ended || g.state == .cancelled { commitPage() }
+    }
+
+    @objc fileprivate func resizeObject(_ g: UIPanGestureRecognizer) {
+        guard let id = selectedObject, scale > 0 else { return }
+        let t = g.translation(in: self)
+        g.setTranslation(.zero, in: self)
+        if let i = page.images.firstIndex(where: { $0.id == id }) {
+            var f = page.images[i].frame
+            let aspect = f.height / max(f.width, 1)
+            f.size.width = max(40, f.width + t.x / scale)
+            f.size.height = f.width * aspect          // photos keep their proportions
+            page.images[i].frame = f
+        } else if let i = page.textBoxes.firstIndex(where: { $0.id == id }) {
+            var f = page.textBoxes[i].frame
+            f.size.width = max(60, f.width + t.x / scale)
+            f.size.height = max(30, f.height + t.y / scale)
+            page.textBoxes[i].frame = f
+        }
+        layoutItems()
+        layoutObjectSelection()
+        if g.state == .ended || g.state == .cancelled { commitPage() }
     }
 }
 
