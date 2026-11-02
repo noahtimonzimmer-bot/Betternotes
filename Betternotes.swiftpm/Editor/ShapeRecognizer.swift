@@ -147,15 +147,22 @@ enum ShapeRecognizer {
         if abs(theta - snapped) < 8 * .pi / 180 { theta = snapped }
         let w = (dist(c[0], c[1]) + dist(c[2], c[3])) / 2
         let h = (dist(c[1], c[2]) + dist(c[3], c[0])) / 2
-        let center = CGPoint(x: c.map(\.x).reduce(0, +) / 4, y: c.map(\.y).reduce(0, +) / 4)
+        let sumX: CGFloat = c[0].x + c[1].x + c[2].x + c[3].x
+        let sumY: CGFloat = c[0].y + c[1].y + c[2].y + c[3].y
+        let center = CGPoint(x: sumX / 4, y: sumY / 4)
         let ux = CGPoint(x: cos(theta), y: sin(theta)), uy = CGPoint(x: -sin(theta), y: cos(theta))
         // keep the drawing direction of the second edge
         let side: CGFloat = ((c[2].x - c[1].x) * uy.x + (c[2].y - c[1].y) * uy.y) >= 0 ? 1 : -1
-        let corners: [(CGFloat, CGFloat)] = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
-        return corners.map { sx, sy in
-            CGPoint(x: center.x + sx * w / 2 * ux.x + sy * side * h / 2 * uy.x,
-                    y: center.y + sx * w / 2 * ux.y + sy * side * h / 2 * uy.y)
+        let signs: [(CGFloat, CGFloat)] = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
+        var out: [CGPoint] = []
+        for (sx, sy) in signs {
+            let a: CGFloat = sx * w / 2
+            let b: CGFloat = sy * side * h / 2
+            let x: CGFloat = center.x + a * ux.x + b * uy.x
+            let y: CGFloat = center.y + a * ux.y + b * uy.y
+            out.append(CGPoint(x: x, y: y))
         }
+        return out
     }
 
     private static func ellipsePoints(_ box: CGRect, n: Int = 72) -> [CGPoint] {
