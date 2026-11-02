@@ -206,7 +206,7 @@ private struct DocumentRow: View {
                 Text("\(doc.pages.count) Seiten").font(.caption).foregroundStyle(.secondary)
             }
         } icon: { Image(systemName: doc.pages.first?.isBoard == true ? "rectangle.on.rectangle" : "book.closed") }
-        .tag(doc.id)
+        .tag(Optional(doc.id))
         .draggable("doc:\(doc.id.uuidString)")
         .contextMenu {
             Button("Umbenennen") { actions.renameDocument(doc) }

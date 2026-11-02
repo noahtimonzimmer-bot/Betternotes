@@ -27,7 +27,9 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     var onCapture: ((UIImage) -> Void)?
     /// Renders the paper at the given pixel width (async); called again when zooming.
     var backgroundRenderer: ((CGFloat, @escaping (UIImage?) -> Void) -> Void)? { didSet { renderedWidth = 0; setNeedsLayout() } }
-    var imageLoader: ((String) -> UIImage?)?
+    var imageLoader: ((String) -> UIImage?)? {
+        didSet { for item in page.images { imageViews[item.id]?.image = imageLoader?(item.file) } }
+    }
 
     private var scale: CGFloat = 0
     private var zoom: CGFloat = 1

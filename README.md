@@ -3,19 +3,22 @@
 Native iPad-Notizapp (SwiftUI + PencilKit). Handschrift auf PDFs, die Striche bleiben getrennt von der PDF und damit dauerhaft bearbeitbar. Öffnet bestehende GoodNotes-Dateien.
 
 ## Funktionen
-- **GoodNotes-Import (`.goodnotes`)**: Seiten, PDF-Hintergründe, Striche (alle 3 bekannten Strich-Formate), Textmarker, Lasso-Verschiebungen, Whiteboards. Striche werden zu bearbeitbaren PencilKit-Strichen. Format: `docs/GOODNOTES_FORMAT.md`
-- **PDF-Import**, Notizbücher, Bibliothek
-- **Schreibrand** links/rechts neben jeder Seite (wie OneNote), Breite einstellbar
-- **Apple Pencil**: Doppeltippen und Drücken (Pencil Pro) frei belegbar – Werkzeugauswahl an der Stiftspitze, Radierer für einen Zug (danach zurück zum Stift), Radierer ein/aus, vorheriges Werkzeug, Lasso
+- **Bibliothek wie OneNote**: links Ordner (verschachtelt) und Notizbücher, per Kontextmenü oder Drag & Drop verschieben, umbenennen, löschen; Suche nach Titeln
+- **GoodNotes-Import (`.goodnotes`)**: Seiten, PDF-Hintergründe, Striche (alle 3 bekannten Formate), Textmarker, Lasso-Verschiebungen, Whiteboards → bearbeitbare PencilKit-Striche. Format: `docs/GOODNOTES_FORMAT.md`
+- **PDF-Import**, neue Notizbücher mit Vorlage (leer, liniert, kariert, gepunktet)
+- **Editor**: Zoom (zwei Finger), flüssig auch bei 100+ Seiten, Seitenübersicht links, Seite hinzufügen/duplizieren/löschen/verschieben, Vorlage pro Seite, „Gehe zu Seite“, Rückgängig/Wiederholen
+- **Immer Schreibrand** links und rechts jeder Seite (wie OneNote), Breite einstellbar
+- **Werkzeuge**: Füller, Bleistift, Textmarker, Radierer (ganze Striche oder pixelweise), Formen (Linie, Rechteck, Ellipse), Lasso, **Kamera-Lasso** (Bereich umkreisen → Bild direkt in der Zwischenablage), Text & Objekte (Textfelder, Bilder verschieben/skalieren)
+- **Apple Pencil**: Doppeltippen und Drücken (Pencil Pro) frei belegbar – Werkzeugauswahl an der Stiftspitze, Radierer für einen Zug, Radierer ein/aus, vorheriges Werkzeug, Lasso, Kamera-Lasso
 - **Gerade Linien** werden automatisch begradigt (abschaltbar)
-- **Foto-Werkzeug**: Bereich aufziehen → Bild in der Zwischenablage
-- Stift, Bleistift, Textmarker, Radierer (ganze Striche oder pixelweise), Lasso, Farben, Strichstärke
-- OneDrive: Anmeldung, Upload, Download (Abgleich folgt)
+- **Bilder** aus Fotos oder Zwischenablage einfügen
+- **Suche** im PDF-Text und in Textfeldern
+- **PDF-Export** mit Handschrift (inkl. Rand, wenn dort geschrieben wurde) über das Teilen-Menü
+- **OneDrive-Synchronisation** in beide Richtungen
 
 ## Noch offen
-- GoodNotes: Textfelder, Formen, Bilder anzeigen; Export zurück nach `.goodnotes`
-- OneDrive-Abgleich in beide Richtungen
-- Zoom, Seiten hinzufügen/verschieben, Suche, Ebenen
+- GoodNotes: Textfelder, Formen, Bilder aus GoodNotes übernehmen; Export zurück nach `.goodnotes`
+- Handschrifterkennung/Suche in Handschrift, Ebenen, Lesezeichen/Gliederung, Audioaufnahme
 
 ## Werkzeuge zur Analyse
 ```bash
