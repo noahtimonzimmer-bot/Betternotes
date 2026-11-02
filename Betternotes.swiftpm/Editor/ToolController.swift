@@ -26,7 +26,7 @@ final class ToolController: ObservableObject {
             case .marker: return "Textmarker"
             case .eraser: return "Radierer"
             case .shape: return "Formen"
-            case .lasso: return "Lasso"
+            case .lasso: return "Lasso (verschieben, Größe, Farbe, in Text)"
             case .cameraLasso: return "Kamera-Lasso"
             case .text: return "Text & Objekte"
             }

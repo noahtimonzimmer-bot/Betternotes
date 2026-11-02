@@ -12,7 +12,9 @@ Native iPad-Notizapp (SwiftUI + PencilKit). Handschrift auf PDFs, die Striche bl
 - **Apple Pencil**: Doppeltippen und Drücken (Pencil Pro) frei belegbar – Werkzeugauswahl an der Stiftspitze, Radierer für einen Zug, Radierer ein/aus, vorheriges Werkzeug, Lasso, Kamera-Lasso
 - **Formerkennung wie GoodNotes**: zeichnen und kurz halten → die Form rastet sofort ein (Vibration), weiter ziehen ohne abzuheben skaliert/dreht sie → Rechteck (exakte rechte Winkel, auch gedreht), Kreis, Ellipse, Dreieck, Vieleck, Linie oder rechter Winkel; mit jedem Stift
 - **Gerade Linien** werden automatisch begradigt (abschaltbar)
-- **Bilder** aus Fotos oder Zwischenablage einfügen
+- **Lasso**: umkreisen → verschieben, mit dem Griff skalieren, umfärben, Handschrift in Text umwandeln, als Bild kopieren, löschen
+- **Ebenen** pro Seite: hinzufügen, umbenennen, ein-/ausblenden, Reihenfolge, Schreib-Ebene wählen
+- **Bilder** aus Fotos oder Zwischenablage einfügen und zuschneiden
 - **Suche** im PDF-Text, in Textfeldern und in der **Handschrift** (Texterkennung Deutsch/Englisch, wird pro Seite zwischengespeichert)
 - **Tabs**: mehrere Notizbücher gleichzeitig offen
 - **Audioaufnahmen** pro Notizbuch (Aufnehmen, Liste, Abspielen, Löschen)
@@ -21,7 +23,7 @@ Native iPad-Notizapp (SwiftUI + PencilKit). Handschrift auf PDFs, die Striche bl
 
 ## Noch offen
 - GoodNotes: Formen übernehmen (in den Beispieldateien alle gelöscht, daher ungetestet); Export zurück nach `.goodnotes`
-- Ebenen, Bild zuschneiden, Laserpointer, Stift-Favoriten
+- Laserpointer, Stift-Favoriten, Export zurück nach `.goodnotes`
 
 ## Werkzeuge zur Analyse
 ```bash

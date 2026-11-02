@@ -16,7 +16,11 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     private var imageViews: [UUID: UIImageView] = [:]
 
     private(set) var page: NotePage
+    /// Ink of the active layer (page coordinates). `canvas` edits this layer.
     private(set) var pageDrawing: PKDrawing
+    let activeLayerID: UUID
+    /// Other visible layers: shown, not editable.
+    private var layerCanvases: [(id: UUID, canvas: PKCanvasView, drawing: PKDrawing)] = []
     var marginLeft: CGFloat = 0 { didSet { if marginLeft != oldValue { scale = 0; setNeedsLayout() } } }
     var marginRight: CGFloat = 0 { didSet { if marginRight != oldValue { scale = 0; setNeedsLayout() } } }
     /// Writing close to an outer edge adds this much space on that side (page units); 0 = fixed.
@@ -35,12 +39,14 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
             var types = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
             if fingerDraws { types.append(NSNumber(value: UITouch.TouchType.direct.rawValue)) }
             cameraGesture.allowedTouchTypes = types
+            selectGesture.allowedTouchTypes = types
             holdObserver.allowedTouchTypes = types
         }
     }
     var mode: Mode = .ink { didSet { applyMode() } }
 
-    var onDrawingChange: ((PKDrawing) -> Void)?
+    var onDrawingChange: ((UUID, PKDrawing) -> Void)?
+    var onRequestCrop: ((UUID) -> Void)?
     var onPageChange: ((NotePage) -> Void)?
     var onEndUsingTool: (() -> Void)?
     var onCapture: ((UIImage) -> Void)?
@@ -61,9 +67,21 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     private var lassoPath: UIBezierPath?
     private var lassoLayer: CAShapeLayer?
 
-    init(page: NotePage, drawing: PKDrawing) {
+    // Selection lasso
+    private lazy var selectGesture = UIPanGestureRecognizer(target: self, action: #selector(selectPan(_:)))
+    private lazy var clearSelectionTap = UITapGestureRecognizer(target: self, action: #selector(tapOutsideSelection(_:)))
+    private var selected: [Int] = []
+    private var selectionBase: [PKStroke] = []
+    private let selectionLayer = CAShapeLayer()
+    private let resizeHandle = UIView(frame: CGRect(x: 0, y: 0, width: 28, height: 28))
+    private let selectionBar = UIStackView()
+    private enum SelectDrag { case lasso, move(CGPoint), resize(anchor: CGPoint, start: CGPoint) }
+    private var selectDrag: SelectDrag?
+
+    init(page: NotePage, layerDrawings: [UUID: PKDrawing]) {
         self.page = page
-        self.pageDrawing = drawing
+        self.activeLayerID = page.activeLayerID
+        self.pageDrawing = layerDrawings[page.activeLayerID] ?? PKDrawing()
         super.init(frame: .zero)
         backgroundColor = .clear
 
@@ -84,7 +102,22 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         canvas.isOpaque = false
         canvas.isScrollEnabled = false
         canvas.delegate = self
-        addSubview(canvas)
+        // Layers bottom → top; only the active one takes input.
+        for layer in page.allLayers {
+            if layer.id == activeLayerID {
+                addSubview(canvas)
+            } else if !layer.hidden {
+                let c = PKCanvasView()
+                c.backgroundColor = .clear
+                c.isOpaque = false
+                c.isScrollEnabled = false
+                c.isUserInteractionEnabled = false
+                addSubview(c)
+                layerCanvases.append((layer.id, c, layerDrawings[layer.id] ?? PKDrawing()))
+            }
+        }
+        if page.allLayers.first(where: { $0.id == activeLayerID })?.hidden == true { canvas.isHidden = true }
+        setupSelectionUI()
         holdObserver.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
         canvas.addGestureRecognizer(holdObserver)
         holdObserver.onHold = { [weak self] pts in self?.snapWhileHolding(pts) }
@@ -123,11 +156,14 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         paper.frame = viewRect(CGRect(origin: .zero, size: page.size))
         itemsLayer.frame = bounds
         canvas.frame = bounds
+        for l in layerCanvases { l.canvas.frame = bounds }
         layoutItems()
         if changed {
             applying = true
             canvas.drawing = pageDrawing.transformed(using: toView)
+            for l in layerCanvases { l.canvas.drawing = l.drawing.transformed(using: toView) }
             applying = false
+            clearSelection()
         }
         requestBackgroundIfNeeded()
     }
@@ -137,6 +173,8 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         zoom = z
         let screen = window?.screen.scale ?? 2
         canvas.contentScaleFactor = min(screen * max(z, 1), 8)
+        for l in layerCanvases { l.canvas.contentScaleFactor = canvas.contentScaleFactor }
+        updateSelectionUI()
         requestBackgroundIfNeeded()
     }
 
@@ -155,8 +193,11 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
 
     private func applyMode() {
         let objects = mode == .objects
-        canvas.isUserInteractionEnabled = mode == .ink || mode == .shape || mode == .lasso
+        canvas.isUserInteractionEnabled = mode == .ink || mode == .shape
         cameraGesture.isEnabled = mode == .camera
+        selectGesture.isEnabled = mode == .lasso
+        clearSelectionTap.isEnabled = mode == .lasso
+        if mode != .lasso { clearSelection() }
         newTextGesture.isEnabled = objects
         itemsLayer.isUserInteractionEnabled = objects
         for tv in textViews.values {
@@ -299,6 +340,9 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
             var actions: [UIAction] = []
             if let iv = v as? UIImageView, let img = iv.image {
+                actions.append(UIAction(title: "Zuschneiden", image: UIImage(systemName: "crop")) { _ in
+                    self?.onRequestCrop?(id)
+                })
                 actions.append(UIAction(title: "Kopieren", image: UIImage(systemName: "doc.on.doc")) { _ in
                     UIPasteboard.general.image = img
                 })
@@ -319,7 +363,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
         guard !applying, scale > 0 else { return }
         pageDrawing = canvasView.drawing.transformed(using: toView.inverted())
-        onDrawingChange?(pageDrawing)
+        onDrawingChange?(activeLayerID, pageDrawing)
     }
 
     func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
@@ -476,6 +520,259 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         flash.opacity = 0
         flash.add(a, forKey: "flash")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { flash.removeFromSuperlayer() }
+    }
+}
+
+// MARK: - Selection lasso (move, resize, recolour, to text, copy, delete)
+
+extension PageCanvasView {
+    fileprivate func setupSelectionUI() {
+        selectionLayer.fillColor = UIColor.systemBlue.withAlphaComponent(0.05).cgColor
+        selectionLayer.strokeColor = UIColor.systemBlue.cgColor
+        selectionLayer.lineWidth = 1.5
+        selectionLayer.lineDashPattern = [6, 4]
+        selectionLayer.isHidden = true
+        layer.addSublayer(selectionLayer)
+
+        resizeHandle.backgroundColor = .systemBlue
+        resizeHandle.layer.cornerRadius = 14
+        resizeHandle.layer.borderColor = UIColor.white.cgColor
+        resizeHandle.layer.borderWidth = 3
+        resizeHandle.isHidden = true
+        resizeHandle.isUserInteractionEnabled = false
+        addSubview(resizeHandle)
+
+        selectionBar.axis = .horizontal
+        selectionBar.spacing = 4
+        selectionBar.isLayoutMarginsRelativeArrangement = true
+        selectionBar.layoutMargins = UIEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
+        selectionBar.backgroundColor = .secondarySystemBackground
+        selectionBar.layer.cornerRadius = 12
+        selectionBar.layer.shadowOpacity = 0.2
+        selectionBar.layer.shadowRadius = 6
+        selectionBar.isHidden = true
+
+        let colors = UIButton(type: .system)
+        colors.setImage(UIImage(systemName: "paintpalette"), for: .normal)
+        colors.showsMenuAsPrimaryAction = true
+        colors.menu = UIMenu(title: "Farbe", children: ToolController.palette.map { c in
+            UIAction(title: "", image: UIImage(systemName: "circle.fill")?.withTintColor(c, renderingMode: .alwaysOriginal)) { [weak self] _ in
+                self?.recolorSelection(c)
+            }
+        })
+        selectionBar.addArrangedSubview(colors)
+        selectionBar.addArrangedSubview(barButton("textformat", "In Text umwandeln") { [weak self] in self?.selectionToText() })
+        selectionBar.addArrangedSubview(barButton("doc.on.doc", "Als Bild kopieren") { [weak self] in self?.copySelection() })
+        selectionBar.addArrangedSubview(barButton("trash", "Löschen") { [weak self] in self?.deleteSelection() })
+        addSubview(selectionBar)
+
+        selectGesture.isEnabled = false
+        selectGesture.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+        addGestureRecognizer(selectGesture)
+        clearSelectionTap.isEnabled = false
+        addGestureRecognizer(clearSelectionTap)
+    }
+
+    private func barButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> UIButton {
+        let b = UIButton(type: .system, primaryAction: UIAction { _ in action() })
+        b.setImage(UIImage(systemName: symbol), for: .normal)
+        b.accessibilityLabel = label
+        b.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        return b
+    }
+
+    fileprivate var selectionRect: CGRect {
+        let strokes = canvas.drawing.strokes
+        var r = CGRect.null
+        for i in selected where strokes.indices.contains(i) { r = r.union(strokes[i].renderBounds) }
+        return r.isNull ? r : r.insetBy(dx: -8, dy: -8)
+    }
+
+    fileprivate func updateSelectionUI() {
+        let r = selectionRect
+        let hidden = selected.isEmpty || r.isNull
+        selectionLayer.isHidden = hidden
+        resizeHandle.isHidden = hidden
+        selectionBar.isHidden = hidden
+        guard !hidden else { return }
+        selectionLayer.path = UIBezierPath(roundedRect: r, cornerRadius: 6).cgPath
+        resizeHandle.center = CGPoint(x: r.maxX, y: r.maxY)
+        let size = selectionBar.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
+        var x = r.midX - size.width / 2
+        x = min(max(x, 4), max(4, bounds.width - size.width - 4))
+        let y = r.minY - size.height - 10 > 0 ? r.minY - size.height - 10 : r.maxY + 16
+        selectionBar.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+        bringSubviewToFront(selectionBar)
+        bringSubviewToFront(resizeHandle)
+    }
+
+    func clearSelection() {
+        selected = []
+        selectionBase = []
+        updateSelectionUI()
+    }
+
+    private func saveCanvas() {
+        pageDrawing = canvas.drawing.transformed(using: toView.inverted())
+        onDrawingChange?(activeLayerID, pageDrawing)
+    }
+
+    @objc fileprivate func tapOutsideSelection(_ g: UITapGestureRecognizer) {
+        if !selectionRect.contains(g.location(in: self)) { clearSelection() }
+    }
+
+    @objc fileprivate func selectPan(_ g: UIPanGestureRecognizer) {
+        let p = g.location(in: self)
+        switch g.state {
+        case .began:
+            let r = selectionRect
+            if !selected.isEmpty, resizeHandle.frame.insetBy(dx: -14, dy: -14).contains(p) {
+                selectDrag = .resize(anchor: CGPoint(x: r.minX, y: r.minY), start: p)
+            } else if !selected.isEmpty, r.contains(p) {
+                selectDrag = .move(p)
+            } else {
+                clearSelection()
+                selectDrag = .lasso
+                let path = UIBezierPath()
+                path.move(to: p)
+                lassoPath = path
+                let l = CAShapeLayer()
+                l.fillColor = UIColor.systemBlue.withAlphaComponent(0.06).cgColor
+                l.strokeColor = UIColor.systemBlue.cgColor
+                l.lineWidth = 1.5
+                l.lineDashPattern = [5, 4]
+                layer.addSublayer(l)
+                lassoLayer = l
+            }
+        case .changed:
+            switch selectDrag {
+            case .lasso:
+                lassoPath?.addLine(to: p)
+                lassoLayer?.path = lassoPath?.cgPath
+            case .move(let start):
+                transformSelection(CGAffineTransform(translationX: p.x - start.x, y: p.y - start.y))
+            case .resize(let anchor, let start):
+                let d0 = max(hypot(start.x - anchor.x, start.y - anchor.y), 1)
+                let k = max(0.1, hypot(p.x - anchor.x, p.y - anchor.y) / d0)
+                var t = CGAffineTransform(translationX: anchor.x, y: anchor.y)
+                t = t.scaledBy(x: k, y: k).translatedBy(x: -anchor.x, y: -anchor.y)
+                transformSelection(t)
+            case .none:
+                break
+            }
+        case .ended, .cancelled:
+            switch selectDrag {
+            case .lasso:
+                lassoLayer?.removeFromSuperlayer()
+                lassoLayer = nil
+                if let path = lassoPath { path.close(); select(in: path) }
+                lassoPath = nil
+            case .move, .resize:
+                selectionBase = selected.map { canvas.drawing.strokes[$0] }
+                saveCanvas()
+            case .none:
+                break
+            }
+            selectDrag = nil
+        default:
+            break
+        }
+    }
+
+    private func select(in path: UIBezierPath) {
+        var hits: [Int] = []
+        for (i, s) in canvas.drawing.strokes.enumerated() {
+            let pts = s.path.map { $0.location.applying(s.transform) }
+            guard !pts.isEmpty else { continue }
+            let step = max(1, pts.count / 24)
+            var inside = 0, total = 0
+            for k in stride(from: 0, to: pts.count, by: step) {
+                total += 1
+                if path.contains(pts[k]) { inside += 1 }
+            }
+            if Double(inside) >= Double(total) * 0.6 { hits.append(i) }
+        }
+        selected = hits
+        selectionBase = hits.map { canvas.drawing.strokes[$0] }
+        updateSelectionUI()
+    }
+
+    private func transformSelection(_ t: CGAffineTransform) {
+        var d = canvas.drawing
+        for (k, i) in selected.enumerated() where d.strokes.indices.contains(i) {
+            var s = selectionBase[k]
+            s.transform = s.transform.concatenating(t)
+            d.strokes[i] = s
+        }
+        applying = true
+        canvas.drawing = d
+        applying = false
+        updateSelectionUI()
+    }
+
+    private func recolorSelection(_ color: UIColor) {
+        var d = canvas.drawing
+        for i in selected where d.strokes.indices.contains(i) {
+            let ink = d.strokes[i].ink
+            let c = ink.inkType == .marker ? color.withAlphaComponent(ink.color.cgColor.alpha) : color
+            d.strokes[i].ink = PKInk(ink.inkType, color: c)
+        }
+        applying = true
+        canvas.drawing = d
+        applying = false
+        selectionBase = selected.map { d.strokes[$0] }
+        saveCanvas()
+    }
+
+    private func deleteSelection() {
+        var d = canvas.drawing
+        for i in selected.sorted(by: >) where d.strokes.indices.contains(i) { d.strokes.remove(at: i) }
+        applying = true
+        canvas.drawing = d
+        applying = false
+        clearSelection()
+        saveCanvas()
+    }
+
+    private func copySelection() {
+        let r = selectionRect
+        guard !r.isNull else { return }
+        let strokes = selected.compactMap { canvas.drawing.strokes.indices.contains($0) ? canvas.drawing.strokes[$0] : nil }
+        // onCapture puts the image on the pasteboard and shows the "copied" hint.
+        onCapture?(PKDrawing(strokes: strokes).image(from: r, scale: (window?.screen.scale ?? 2) * 2))
+    }
+
+    /// Handwriting → text box at the same place (Vision, German/English).
+    private func selectionToText() {
+        let r = selectionRect
+        guard !r.isNull, scale > 0 else { return }
+        let strokes = selected.compactMap { canvas.drawing.strokes.indices.contains($0) ? canvas.drawing.strokes[$0] : nil }
+        guard let first = strokes.first else { return }
+        let drawing = PKDrawing(strokes: strokes)
+        let indices = selected
+        let colorHex = first.ink.color.withAlphaComponent(1).hexString
+        Task { [weak self] in
+            let text = await Task.detached(priority: .userInitiated) { HandwritingIndex.recognize(drawing) }.value
+            guard let self else { return }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                return
+            }
+            let pageRect = r.applying(self.toView.inverted())
+            let lines = CGFloat(max(1, trimmed.components(separatedBy: "\n").count))
+            let font = max(12, min(80, pageRect.height / lines * 0.62))
+            var d = self.canvas.drawing
+            for i in indices.sorted(by: >) where d.strokes.indices.contains(i) { d.strokes.remove(at: i) }
+            self.applying = true
+            self.canvas.drawing = d
+            self.applying = false
+            self.clearSelection()
+            self.saveCanvas()
+            self.page.textBoxes.append(TextBox(frame: pageRect, text: trimmed, fontSize: font, colorHex: colorHex))
+            self.syncItems()
+            self.commitPage()
+        }
     }
 }
 

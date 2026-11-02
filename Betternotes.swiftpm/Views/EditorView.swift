@@ -10,6 +10,7 @@ final class EditorModel: ObservableObject {
     @Published var toast: String?
     /// Bumped per page when its ink changes, so thumbnails refresh.
     @Published var inkVersions: [UUID: Int] = [:]
+    @Published var cropRequest: CropRequest?
     var scrollToPage: ((Int) -> Void)?
     var undoManager: () -> UndoManager? = { nil }
 
@@ -28,6 +29,7 @@ struct EditorView: View {
     @StateObject private var model = EditorModel()
     @StateObject private var recorder = AudioRecorder()
     @State private var showRecordings = false
+    @State private var showLayers = false
     @State private var showThumbnails = false
     @State private var photoItem: PhotosPickerItem?
     @State private var showPhotoPicker = false
@@ -109,6 +111,7 @@ struct EditorView: View {
             }
         }
         .sheet(item: $exportURL) { url in ShareSheet(items: [url]) }
+        .sheet(item: $model.cropRequest) { req in ImageCropView(docID: document.id, request: req) }
         .alert("Gliederung", isPresented: $askBookmark) {
             TextField("Titel (leer = entfernen)", text: $bookmarkTitle)
             Button("Abbrechen", role: .cancel) {}
@@ -145,6 +148,10 @@ struct EditorView: View {
                     .foregroundStyle(recorder.isRecording ? .red : .accentColor)
             }
             .contextMenu { Button("Aufnahmen anzeigen") { showRecordings = true } }
+            Button { showLayers = true } label: { Image(systemName: "square.3.layers.3d") }
+                .popover(isPresented: $showLayers) {
+                    LayersView(docID: document.id, pageIndex: model.currentPage)
+                }
             Button { showRecordings = true } label: { Image(systemName: "waveform") }
                 .popover(isPresented: $showRecordings) {
                     RecordingsView(recorder: recorder, doc: doc)
@@ -263,21 +270,25 @@ struct DocumentCanvas: UIViewRepresentable {
         }
 
         func makePageView(for page: NotePage) -> PageCanvasView {
-            guard let doc = store.document(docID) else { return PageCanvasView(page: page, drawing: PKDrawing()) }
-            let v = PageCanvasView(page: page, drawing: store.drawing(for: page, in: doc))
+            guard let doc = store.document(docID) else { return PageCanvasView(page: page, layerDrawings: [:]) }
+            var layers: [UUID: PKDrawing] = [:]
+            for l in page.allLayers { layers[l.id] = store.layerDrawing(l.id, in: doc) }
+            let v = PageCanvasView(page: page, layerDrawings: layers)
             let store = self.store
             let pdf = page.pdfAttachment.map { store.attachmentURL($0, in: doc) }
             v.imageLoader = { name in UIImage(contentsOfFile: store.attachmentURL(name, in: doc).path) }
             v.backgroundRenderer = { width, done in
                 PageBackground.render(page: page, pdf: pdf, pixelWidth: width, completion: done)
             }
-            v.onDrawingChange = { [weak model] d in
-                store.saveDrawing(d, for: page, in: doc)
+            v.onDrawingChange = { [weak model] layer, d in
+                store.saveLayerDrawing(d, layer: layer, in: doc)
                 model?.inkVersions[page.id, default: 0] += 1
             }
             let docID = self.docID
             v.onPageChange = { p in store.updatePage(p, in: docID) }
             v.onEndUsingTool = { [weak tools] in tools?.didEndUsingTool() }
+            let pageID = page.id
+            v.onRequestCrop = { [weak model] item in model?.cropRequest = CropRequest(pageID: pageID, itemID: item) }
             v.onCapture = { [weak model] img in
                 UIPasteboard.general.image = img
                 model?.show("Ausschnitt in die Zwischenablage kopiert")

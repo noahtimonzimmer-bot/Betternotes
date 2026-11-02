@@ -50,13 +50,24 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
         }
         pages = new
         for (id, v) in views {
-            if let p = new.first(where: { $0.id == id }) { v.update(page: p) } else { v.removeFromSuperview(); views[id] = nil }
+            // A page view is rebuilt when its layers change (other canvases, active layer).
+            if let p = new.first(where: { $0.id == id }), Self.layerKey(p) == Self.layerKey(v.page) {
+                v.update(page: p)
+            } else {
+                v.removeFromSuperview()
+                views[id] = nil
+            }
         }
+        if views.isEmpty || views.count < pages.count { setNeedsLayout() }
         if sig != signature {
             signature = sig
             laidOutWidth = 0
             setNeedsLayout()
         }
+    }
+
+    private static func layerKey(_ p: NotePage) -> String {
+        p.allLayers.map { "\($0.id)\($0.hidden)" }.joined() + "\(p.activeLayerID)"
     }
 
     func forEachPageView(_ body: (PageCanvasView, NotePage) -> Void) {

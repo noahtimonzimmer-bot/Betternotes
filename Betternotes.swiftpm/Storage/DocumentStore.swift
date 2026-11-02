@@ -85,13 +85,15 @@ final class DocumentStore: ObservableObject {
         guard let doc = document(id), doc.pages.indices.contains(index) else { return }
         let original = doc.pages[index]
         let copy = original.duplicated()
-        saveDrawing(drawing(for: original, in: doc), for: copy, in: doc)
+        saveDrawing(drawing(for: original, in: doc, includeHidden: true), for: copy, in: doc)
         insertPage(copy, at: index + 1, in: id)
     }
 
     func deletePage(at index: Int, in id: UUID) {
         guard let doc = document(id), doc.pages.indices.contains(index) else { return }
-        try? FileManager.default.removeItem(at: drawingURL(doc.pages[index], doc))
+        for layer in doc.pages[index].allLayers {
+            try? FileManager.default.removeItem(at: layerURL(layer.id, doc))
+        }
         update(id) {
             $0.pages.remove(at: index)
             if $0.pages.isEmpty { $0.pages = [NotePage()] }
@@ -159,19 +161,34 @@ final class DocumentStore: ObservableObject {
 
     // MARK: Drawings & attachments
 
-    private func drawingURL(_ page: NotePage, _ doc: NoteDocument) -> URL {
-        packageURL(doc).appendingPathComponent("pages/\(page.id.uuidString).drawing")
+    private func layerURL(_ layer: UUID, _ doc: NoteDocument) -> URL {
+        packageURL(doc).appendingPathComponent("pages/\(layer.uuidString).drawing")
     }
 
-    func drawing(for page: NotePage, in doc: NoteDocument) -> PKDrawing {
-        guard let data = try? Data(contentsOf: drawingURL(page, doc)), let d = try? PKDrawing(data: data) else { return PKDrawing() }
+    /// Ink of one layer (the bottom layer's id is the page id).
+    func layerDrawing(_ layer: UUID, in doc: NoteDocument) -> PKDrawing {
+        guard let data = try? Data(contentsOf: layerURL(layer, doc)), let d = try? PKDrawing(data: data) else { return PKDrawing() }
         return d
     }
 
-    func saveDrawing(_ drawing: PKDrawing, for page: NotePage, in doc: NoteDocument) {
-        let url = drawingURL(page, doc)
+    func saveLayerDrawing(_ drawing: PKDrawing, layer: UUID, in doc: NoteDocument) {
+        let url = layerURL(layer, doc)
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? drawing.dataRepresentation().write(to: url, options: .atomic)
+    }
+
+    /// All visible layers combined (thumbnails, export, search).
+    func drawing(for page: NotePage, in doc: NoteDocument, includeHidden: Bool = false) -> PKDrawing {
+        var all = PKDrawing()
+        for layer in page.allLayers where includeHidden || !layer.hidden {
+            all.append(layerDrawing(layer.id, in: doc))
+        }
+        return all
+    }
+
+    /// Writes the bottom layer (used by importers and page duplication).
+    func saveDrawing(_ drawing: PKDrawing, for page: NotePage, in doc: NoteDocument) {
+        saveLayerDrawing(drawing, layer: page.id, in: doc)
     }
 
     func attachmentURL(_ name: String, in doc: NoteDocument) -> URL {

@@ -22,7 +22,7 @@ enum HandwritingIndex {
         return text
     }
 
-    private static func recognize(_ drawing: PKDrawing) -> String {
+    static func recognize(_ drawing: PKDrawing) -> String {
         let bounds = drawing.bounds.insetBy(dx: -10, dy: -10)
         guard bounds.width > 1, bounds.height > 1 else { return "" }
         // Dark ink on white, ~1600 px wide for good recognition.

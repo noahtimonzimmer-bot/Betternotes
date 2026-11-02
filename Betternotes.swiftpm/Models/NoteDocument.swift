@@ -31,6 +31,14 @@ struct NoteDocument: Identifiable, Codable, Hashable {
     }
 }
 
+/// A drawing layer of a page. The first (bottom) layer always has the page's own id,
+/// so notebooks from before layers existed keep their single drawing file.
+struct PageLayer: Identifiable, Codable, Hashable {
+    var id: UUID
+    var name: String
+    var hidden = false
+}
+
 struct Recording: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
     var file: String          // in attachments/
@@ -89,6 +97,10 @@ struct NotePage: Identifiable, Codable, Hashable {
     /// Writing space left/right of the paper (page units). nil = app default; grows when writing near the edge.
     var marginLeft: Double?
     var marginRight: Double?
+    /// Drawing layers bottom → top; empty = one layer (the page id).
+    var layers: [PageLayer] = []
+    /// Layer the pencil writes into; nil = top layer.
+    var activeLayer: UUID?
 
     var size: CGSize { CGSize(width: width, height: height) }
 
@@ -116,12 +128,23 @@ struct NotePage: Identifiable, Codable, Hashable {
         bookmark = try c.decodeIfPresent(String.self, forKey: .bookmark)
         marginLeft = try c.decodeIfPresent(Double.self, forKey: .marginLeft)
         marginRight = try c.decodeIfPresent(Double.self, forKey: .marginRight)
+        layers = try c.decodeIfPresent([PageLayer].self, forKey: .layers) ?? []
+        activeLayer = try c.decodeIfPresent(UUID.self, forKey: .activeLayer)
     }
 
-    /// Fresh copy with a new id (drawing is copied separately by the store).
+    var allLayers: [PageLayer] { layers.isEmpty ? [PageLayer(id: id, name: "Ebene 1")] : layers }
+    var activeLayerID: UUID {
+        let all = allLayers
+        if let a = activeLayer, all.contains(where: { $0.id == a }) { return a }
+        return all[all.count - 1].id
+    }
+
+    /// Fresh copy with a new id (drawing is copied separately by the store; layers are merged).
     func duplicated() -> NotePage {
         var p = self
         p.id = UUID()
+        p.layers = []
+        p.activeLayer = nil
         p.textBoxes = textBoxes.map { var t = $0; t.id = UUID(); return t }
         p.images = images.map { var i = $0; i.id = UUID(); return i }
         return p
