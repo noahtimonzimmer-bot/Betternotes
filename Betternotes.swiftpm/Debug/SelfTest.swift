@@ -342,7 +342,12 @@ enum SelfTest {
         if let s = ShapeRecognizer.smoothed(wobbly) {
             check("smooth-count", s.path.count == wobbly.path.count)
             check("smooth-ends", s.path.first?.location == wobbly.path.first?.location && s.path.last?.location == wobbly.path.last?.location)
-            check("smooth-flatter", s.renderBounds.height < wobbly.renderBounds.height, "\(s.renderBounds.height) vs \(wobbly.renderBounds.height)")
+            // jitter of the control points must shrink (render bounds include the pen width, so use points)
+            func spread(_ st: PKStroke) -> CGFloat {
+                let ys = st.path.dropFirst().dropLast().map(\.location.y)
+                return (ys.max() ?? 0) - (ys.min() ?? 0)
+            }
+            check("smooth-flatter", spread(s) < spread(wobbly) * 0.7, "\(spread(s)) vs \(spread(wobbly))")
         } else {
             check("smooth", false, "nil")
         }

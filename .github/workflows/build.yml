@@ -41,6 +41,8 @@ jobs:
   simulate:
     # Runs the app in the iPad simulator: launch, screenshots, built-in self-test (-selftest).
     runs-on: macos-15
+    permissions:
+      contents: write
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -90,6 +92,19 @@ jobs:
           echo "----- self-test -----"
           grep -E "SELFTEST|Fatal|fatal error|Terminating" selftest.log || tail -50 selftest.log
           grep -q "SELFTEST DONE" selftest.log && ! grep -q "SELFTEST FAIL" selftest.log
+
+      - name: Publish screenshots to branch ci-screenshots
+        if: always()
+        working-directory: Betternotes.swiftpm
+        run: |
+          mkdir -p "$RUNNER_TEMP/pub"
+          for f in shots/*.png; do [ -f "$f" ] && sips -Z 1400 "$f" --out "$RUNNER_TEMP/pub/$(basename "$f")" >/dev/null; done
+          cp selftest.log "$RUNNER_TEMP/pub/" 2>/dev/null || true
+          cd "$RUNNER_TEMP/pub"
+          git init -q -b ci-screenshots
+          git config user.name "ci"; git config user.email "ci@users.noreply.github.com"
+          git add -A && git commit -qm "screenshots ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" ci-screenshots
 
       - uses: actions/upload-artifact@v4
         if: always()
