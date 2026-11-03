@@ -1320,6 +1320,12 @@ extension PageCanvasView {
     func testCutSelection() { copySelection(); deleteSelection() }
 
     /// Long-press paste at a screen point.
+    /// Paste the clipboard onto this page; without a point: upper middle of the paper.
+    func pasteFromClipboard(at p: CGPoint? = nil) {
+        pastePoint = p ?? viewRect(CGRect(x: page.size.width * 0.3, y: page.size.height * 0.15, width: 1, height: 1)).origin
+        paste()
+    }
+
     func testPaste(at p: CGPoint) {
         pastePoint = p
         paste()

@@ -8,16 +8,21 @@ import SwiftUI
 final class EditorModel: ObservableObject {
     @Published var currentPage = 0
     @Published var toast: String?
+    /// Optional button in the toast (e.g. "Einfügen" right after a camera-lasso photo).
+    @Published var toastAction: (title: String, run: () -> Void)?
+    /// Pastes the clipboard (strokes, photo or text) onto the current page.
+    var pasteIntoCurrentPage: (() -> Void)?
     /// Bumped per page when its ink changes, so thumbnails refresh.
     @Published var inkVersions: [UUID: Int] = [:]
     @Published var cropRequest: CropRequest?
     var scrollToPage: ((Int) -> Void)?
     var undoManager: () -> UndoManager? = { nil }
 
-    func show(_ message: String) {
+    func show(_ message: String, action: (title: String, run: () -> Void)? = nil) {
         toast = message
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-            if self?.toast == message { self?.toast = nil }
+        toastAction = action
+        DispatchQueue.main.asyncAfter(deadline: .now() + (action == nil ? 2 : 5)) { [weak self] in
+            if self?.toast == message { self?.toast = nil; self?.toastAction = nil }
         }
     }
 }
@@ -76,7 +81,18 @@ struct EditorView: View {
                     }
                 }
                 if let t = model.toast {
-                    Label(t, systemImage: "checkmark.circle.fill")
+                    HStack(spacing: 12) {
+                        Label(t, systemImage: "checkmark.circle.fill")
+                        if let a = model.toastAction {
+                            Button(a.title) {
+                                a.run()
+                                model.toast = nil
+                                model.toastAction = nil
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+                    }
                         .font(.callout.weight(.medium))
                         .padding(.horizontal, 16).padding(.vertical, 10)
                         .background(Color(.systemBackground), in: Capsule())
@@ -151,7 +167,8 @@ struct EditorView: View {
                                  pickPhoto: {
                                      // wait until the popover is gone, else iPadOS drops the picker
                                      DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showPhotoPicker = true }
-                                 })
+                                 },
+                                 pasteClipboard: { model.pasteIntoCurrentPage?() })
                 }
             Button { showSearch = true } label: { Image(systemName: "magnifyingglass") }
             Button { exportPDF() } label: { Image(systemName: "square.and.arrow.up") }
@@ -253,6 +270,10 @@ struct DocumentCanvas: UIViewRepresentable {
         context.coordinator.pencil.attach(to: v)
         model.scrollToPage = { [weak v] i in v?.scrollToPage(i) }
         model.undoManager = { [weak v] in v?.undoManager }
+        model.pasteIntoCurrentPage = { [weak v, weak model] in
+            guard let v, let model, let doc = store.document(docID), doc.pages.indices.contains(model.currentPage) else { return }
+            v.pageView(for: doc.pages[model.currentPage].id)?.pasteFromClipboard()
+        }
         v.setPages(store.document(docID)?.pages ?? [])
         return v
     }
@@ -306,9 +327,9 @@ struct DocumentCanvas: UIViewRepresentable {
             let pageID = page.id
             v.addAttachment = { data in store.addAttachment(data, ext: "png", to: doc) }
             v.onRequestCrop = { [weak model] item in model?.cropRequest = CropRequest(pageID: pageID, itemID: item) }
-            v.onCapture = { [weak model] img in
+            v.onCapture = { [weak model, weak v] img in
                 UIPasteboard.general.image = img
-                model?.show("Ausschnitt in die Zwischenablage kopiert")
+                model?.show("In die Zwischenablage kopiert", action: ("Einfügen", { v?.pasteFromClipboard() }))
             }
             configure(v, page: page)
             return v

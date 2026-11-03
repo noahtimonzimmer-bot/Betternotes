@@ -235,6 +235,17 @@ enum SelfTest {
             check("camera-lasso-image", false, "no image on pasteboard")
         }
 
+        // 9b. …and that picture can be pasted onto the page (button in the hint) and is not blank
+        let camImages0 = page()?.images.count ?? 0
+        pv.pasteFromClipboard()
+        await wait(0.6)
+        let camImages = page()?.images ?? []
+        check("camera-lasso-paste", camImages.count == camImages0 + 1, "images \(camImages.count)")
+        if let item = camImages.last, let d = store.document(docID),
+           let img = UIImage(contentsOfFile: store.attachmentURL(item.file, in: d).path) {
+            check("camera-lasso-has-ink", !isBlank(img), "pasted picture is blank/white")
+        }
+
         // 10. Paste a photo → image item on the page
         let photo = UIGraphicsImageRenderer(size: CGSize(width: 200, height: 100)).image { ctx in
             UIColor.systemTeal.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 200, height: 100))
@@ -300,6 +311,20 @@ enum SelfTest {
         check("final-saved-stable", close(saved().bounds, finalInk.bounds) && saved().strokes.count == finalInk.strokes.count)
         print("SELFTEST SCREENSHOT edits")
         await wait(1.5)
+    }
+
+    /// True if the picture is (almost) a single colour – e.g. a snapshot that missed the ink.
+    private static func isBlank(_ img: UIImage) -> Bool {
+        guard let cg = img.cgImage else { return true }
+        let w = 64, h = 64
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return true }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var dark = 0
+        for i in stride(from: 0, to: px.count, by: 4) where Int(px[i]) + Int(px[i + 1]) + Int(px[i + 2]) < 300 { dark += 1 }
+        return dark < 5
     }
 
     private static func finish() {

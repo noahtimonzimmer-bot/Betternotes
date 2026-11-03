@@ -14,6 +14,7 @@ struct AddPagePanel: View {
     /// Called with the new page's index so the editor can scroll there.
     let didInsert: (Int) -> Void
     let pickPhoto: () -> Void
+    var pasteClipboard: () -> Void = {}
     @State private var position = Position.after
     @State private var scanning = false
     @State private var camera = false
@@ -75,6 +76,8 @@ struct AddPagePanel: View {
                         .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
                     Divider().padding(.leading, 52)
                     row("PDF-Seiten importieren", "square.and.arrow.down") { importing = true }
+                    Divider().padding(.leading, 52)
+                    row("Aus Zwischenablage einfügen", "doc.on.clipboard") { dismiss(); pasteClipboard() }
                 }
                 .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
             }
