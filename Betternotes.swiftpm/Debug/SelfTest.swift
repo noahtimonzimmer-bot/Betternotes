@@ -323,7 +323,12 @@ enum SelfTest {
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return true }
         ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
         var dark = 0
-        for i in stride(from: 0, to: px.count, by: 4) where Int(px[i]) + Int(px[i + 1]) + Int(px[i + 2]) < 300 { dark += 1 }
+        for i in stride(from: 0, to: px.count, by: 4) {
+            let r: Int = Int(px[i])
+            let g: Int = Int(px[i + 1])
+            let b: Int = Int(px[i + 2])
+            if r + g + b < 300 { dark += 1 }
+        }
         return dark < 5
     }
 
