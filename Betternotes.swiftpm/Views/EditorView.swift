@@ -335,15 +335,25 @@ struct DocumentCanvas: UIViewRepresentable {
 /// Floating tool bar (drag the grip to move it anywhere; position is remembered).
 struct ToolBar: View {
     @EnvironmentObject var tools: ToolController
+    /// Docked left/right: tools stacked top to bottom.
+    var vertical = false
+
+    private var divider: some View {
+        Capsule().fill(Color.secondary.opacity(0.3))
+            .frame(width: vertical ? 24 : 1, height: vertical ? 1 : 24)
+            .padding(vertical ? .vertical : .horizontal, 4)
+    }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "line.3.horizontal")
+        let layout = vertical ? AnyLayout(VStackLayout(spacing: 6)) : AnyLayout(HStackLayout(spacing: 6))
+        layout {
+            Image(systemName: vertical ? "line.3.horizontal" : "line.3.horizontal")
+                .rotationEffect(.degrees(vertical ? 90 : 0))
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.secondary)
-                .frame(width: 22, height: 36)
+                .frame(width: vertical ? 36 : 22, height: vertical ? 22 : 36)
                 .contentShape(Rectangle())
-                .accessibilityLabel("Leiste verschieben")
+                .accessibilityLabel("Leiste andocken")
             ForEach(ToolController.Kind.allCases) { k in
                 Button { tools.select(k) } label: {
                     Image(systemName: k.symbol)
@@ -355,7 +365,7 @@ struct ToolBar: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(k.label)
             }
-            Capsule().fill(Color.secondary.opacity(0.3)).frame(width: 1, height: 24).padding(.horizontal, 4)
+            divider
             ForEach(ToolController.widths, id: \.self) { w in
                 Button { tools.width = w } label: {
                     Circle().fill(Color.primary)
@@ -365,7 +375,7 @@ struct ToolBar: View {
                 }
                 .buttonStyle(.plain)
             }
-            Capsule().fill(Color.secondary.opacity(0.3)).frame(width: 1, height: 24).padding(.horizontal, 4)
+            divider
             ForEach(ToolController.palette, id: \.self) { c in
                 Circle().fill(Color(uiColor: c)).frame(width: 22, height: 22)
                     .overlay(Circle().stroke(Color.white, lineWidth: 2))
@@ -374,7 +384,7 @@ struct ToolBar: View {
                     .overlay(Circle().stroke(Color.primary.opacity(0.6), lineWidth: tools.currentColor == c ? 2 : 0))
                     .onTapGesture { tools.setColor(c) }
             }
-            Capsule().fill(Color.secondary.opacity(0.3)).frame(width: 1, height: 24).padding(.horizontal, 4)
+            divider
             Button { tools.rulerActive.toggle() } label: {
                 Image(systemName: "ruler")
                     .font(.system(size: 16, weight: .medium))
@@ -408,11 +418,8 @@ struct ToolBar: View {
             .disabled(!tools.kind.usesColor)
             .accessibilityLabel("Aktuellen Stift als Favorit speichern")
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color(.systemBackground), in: Capsule())
-        .overlay(Capsule().stroke(Color.primary.opacity(0.08)))
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+        .padding(.horizontal, vertical ? 4 : 8)
+        .padding(.vertical, vertical ? 8 : 4)
     }
 
     private func toolTint(_ k: ToolController.Kind) -> Color {
@@ -420,43 +427,51 @@ struct ToolBar: View {
     }
 }
 
-/// Draggable container for the tool bar.
+/// Tool bar docked at one of four places (top, bottom, left, right – each centred).
+/// Drag it by the grip: on release it snaps to the nearest place.
 struct FloatingToolBar: View {
-    @AppStorage("toolbar.x") private var fx = 0.5
-    @AppStorage("toolbar.y") private var fy = 0.0
+    enum Dock: String { case top, bottom, left, right }
+    @AppStorage("toolbar.dock") private var dockRaw = Dock.top.rawValue
     @State private var drag: CGSize = .zero
     let area: CGSize
 
-    var body: some View {
-        ToolBar()
-            .fixedSize()
-            .background(GeometryReader { g in Color.clear.preference(key: BarSize.self, value: g.size) })
-            .modifier(Positioned(fx: fx, fy: fy, drag: drag, area: area))
-            .gesture(DragGesture(minimumDistance: 4)
-                .onChanged { drag = $0.translation }
-                .onEnded { v in
-                    fx = min(max(fx + v.translation.width / max(area.width, 1), 0), 1)
-                    fy = min(max(fy + v.translation.height / max(area.height, 1), 0), 1)
-                    drag = .zero
-                })
-    }
+    private var dock: Dock { Dock(rawValue: dockRaw) ?? .top }
 
-    private struct BarSize: PreferenceKey {
-        static var defaultValue: CGSize = .zero
-        static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
-    }
-
-    private struct Positioned: ViewModifier {
-        let fx: Double, fy: Double, drag: CGSize, area: CGSize
-        @State private var size: CGSize = CGSize(width: 600, height: 44)
-        func body(content: Content) -> some View {
-            let w = min(size.width, area.width - 16)
-            let x = min(max(fx * area.width + drag.width, w / 2 + 8), area.width - w / 2 - 8)
-            let y = min(max(fy * area.height + drag.height, size.height / 2 + 8), area.height - size.height / 2 - 8)
-            content
-                .onPreferenceChange(BarSize.self) { size = $0 }
-                .position(x: x, y: y)
+    private func anchor(_ d: Dock) -> CGPoint {
+        switch d {
+        case .top: return CGPoint(x: area.width / 2, y: 34)
+        case .bottom: return CGPoint(x: area.width / 2, y: area.height - 34)
+        case .left: return CGPoint(x: 34, y: area.height / 2)
+        case .right: return CGPoint(x: area.width - 34, y: area.height / 2)
         }
+    }
+
+    var body: some View {
+        let vertical = dock == .left || dock == .right
+        let a = anchor(dock)
+        ScrollView(vertical ? .vertical : .horizontal, showsIndicators: false) {
+            ToolBar(vertical: vertical).fixedSize()
+        }
+        .fixedSize(horizontal: !vertical, vertical: vertical)
+        .frame(maxWidth: vertical ? nil : area.width - 24, maxHeight: vertical ? area.height - 24 : nil)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color.primary.opacity(0.08)))
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+        .position(x: a.x + drag.width, y: a.y + drag.height)
+        .gesture(DragGesture(minimumDistance: 6)
+            .onChanged { drag = $0.translation }
+            .onEnded { v in
+                let p = CGPoint(x: a.x + v.translation.width, y: a.y + v.translation.height)
+                let target = [Dock.top, .bottom, .left, .right].min { d1, d2 in
+                    let p1 = anchor(d1), p2 = anchor(d2)
+                    return hypot(p1.x - p.x, p1.y - p.y) < hypot(p2.x - p.x, p2.y - p.y)
+                } ?? .top
+                withAnimation(.spring(duration: 0.3)) {
+                    dockRaw = target.rawValue
+                    drag = .zero
+                }
+            })
+        .animation(.spring(duration: 0.3), value: dockRaw)
     }
 }
 
