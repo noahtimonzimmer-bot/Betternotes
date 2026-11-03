@@ -315,8 +315,9 @@ enum SelfTest {
 
     /// True if the picture is (almost) a single colour – e.g. a snapshot that missed the ink.
     private static func isBlank(_ img: UIImage) -> Bool {
+        // full resolution: a thin pen line would vanish if we scaled the picture down first
         guard let cg = img.cgImage else { return true }
-        let w = 64, h = 64
+        let w = cg.width, h = cg.height
         var px = [UInt8](repeating: 0, count: w * h * 4)
         guard let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                                   space: CGColorSpaceCreateDeviceRGB(),
@@ -327,9 +328,11 @@ enum SelfTest {
             let r: Int = Int(px[i])
             let g: Int = Int(px[i + 1])
             let b: Int = Int(px[i + 2])
-            if r + g + b < 300 { dark += 1 }
+            let a: Int = Int(px[i + 3])
+            if a > 200 && r + g + b < 200 { dark += 1 }
         }
-        return dark < 5
+        print("SELFTEST INFO capture \(w)x\(h) dark=\(dark)")
+        return dark < 50
     }
 
     private static func finish() {
