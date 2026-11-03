@@ -8,6 +8,29 @@ enum ShapeRecognizer {
         stroke.path.map { $0.location.applying(stroke.transform) }
     }
 
+    /// Gentle beautify for handwriting: removes tiny jitter, keeps the shape and pressure.
+    /// Two passes of a [1 2 1] filter on the control points; ends stay where they were.
+    static func smoothed(_ stroke: PKStroke) -> PKStroke? {
+        let pts = Array(stroke.path)
+        guard pts.count > 5 else { return nil }
+        var locs = pts.map(\.location)
+        for _ in 0..<2 {
+            var next = locs
+            for i in 1..<(locs.count - 1) {
+                let x: CGFloat = (locs[i - 1].x + 2 * locs[i].x + locs[i + 1].x) / 4
+                let y: CGFloat = (locs[i - 1].y + 2 * locs[i].y + locs[i + 1].y) / 4
+                next[i] = CGPoint(x: x, y: y)
+            }
+            locs = next
+        }
+        let newPts = pts.enumerated().map { i, p in
+            PKStrokePoint(location: locs[i], timeOffset: p.timeOffset, size: p.size, opacity: p.opacity,
+                          force: p.force, azimuth: p.azimuth, altitude: p.altitude)
+        }
+        return PKStroke(ink: stroke.ink, path: PKStrokePath(controlPoints: newPts, creationDate: stroke.path.creationDate),
+                        transform: stroke.transform, mask: stroke.mask)
+    }
+
     /// Replaces a nearly straight stroke by an exact line between its end points (no hold needed).
     static func straightLine(from stroke: PKStroke) -> PKStroke? {
         let pts = points(stroke)

@@ -27,6 +27,9 @@ struct SettingsView: View {
                 Toggle(isOn: $settings.holdToShape) {
                     Label("Formen: zeichnen und kurz halten", systemImage: "square.on.circle")
                 }
+                Toggle(isOn: $settings.smoothInk) {
+                    Label("Handschrift leicht glätten", systemImage: "scribble.variable")
+                }
                 Toggle(isOn: $settings.straightenLines) {
                     Label("Gerade Linien begradigen", systemImage: "line.diagonal")
                 }

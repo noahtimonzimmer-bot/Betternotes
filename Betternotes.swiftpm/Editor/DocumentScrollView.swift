@@ -26,6 +26,12 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
     private(set) var currentIndex = 0
     private var shiftX: CGFloat = 0        // how far pages were moved right to fit left margins
     private var didCenter = false
+    /// Zoom that is baked into the layout: after a pinch the pages are laid out again at the
+    /// new size (zoomScale back to 1), so PencilKit and the paper render crisply instead of a
+    /// scaled-up bitmap.
+    private(set) var layoutZoom: CGFloat = 1
+    private var pendingCenter: CGPoint?
+    static let minZoom: CGFloat = 0.6, maxZoom: CGFloat = 3
     /// Extra writing space (in page widths) added on both sides while scrolling outwards –
     /// the area around the pages never ends.
     private(set) var extraLeft: CGFloat = 0
@@ -37,7 +43,7 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
         super.init(frame: frame)
         delegate = self
         minimumZoomScale = 0.6
-        maximumZoomScale = 6
+        maximumZoomScale = 3
         backgroundColor = PageBackground.surfaceColor
         delaysContentTouches = false
         let finger = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
@@ -107,7 +113,7 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
         }
         laidOutWidth = bounds.width
         let side: CGFloat = 8
-        let width = bounds.width - 2 * side
+        let width = (bounds.width - 2 * side) * layoutZoom
         var y = spacing
         // Same scale as if every page had the default margins; extended margins make a page
         // wider than the screen (scroll sideways) instead of shrinking the paper.
@@ -122,7 +128,12 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
         let minX = min(side, frames.map(\.minX).min() ?? side)
         let shift = side - minX
         frames = frames.map { $0.offsetBy(dx: shift, dy: 0) }
-        if didCenter {
+        if let c = pendingCenter {
+            // after a pinch: keep the same spot under the fingers
+            offset = CGPoint(x: c.x - bounds.width / 2, y: c.y - bounds.height / 2)
+            offset.y = min(max(offset.y, 0), max(0, y - bounds.height))
+            pendingCenter = nil
+        } else if didCenter {
             // margin grew on the left: keep the view where it was instead of jumping
             offset.x += (shift - shiftX) * zoom
         } else if !pages.isEmpty {
@@ -136,7 +147,7 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
         // one continuous, subtly dotted surface behind all pages (scales with zoom)
         if let p = pages.first {
             let d = provider?.defaultMargin(for: p) ?? 0
-            content.backgroundColor = PageBackground.dotPattern(scale: (bounds.width - 2 * side) / (p.width + 2 * d), originX: 0)
+            content.backgroundColor = PageBackground.dotPattern(scale: width / (p.width + 2 * d), originX: 0)
         }
         contentSize = content.frame.size
         for (i, p) in pages.enumerated() { views[p.id]?.frame = frames[i] }
@@ -180,7 +191,24 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
     }
 
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
-        for v in views.values { v.setZoom(scale) }
+        guard abs(scale - 1) > 0.01 else { return }
+        let newZoom = min(max(layoutZoom * scale, Self.minZoom), Self.maxZoom)
+        let k = newZoom / layoutZoom
+        // visible centre in (unzoomed) layout coordinates
+        let center = CGPoint(x: (contentOffset.x + bounds.width / 2) / scale,
+                             y: (contentOffset.y + bounds.height / 2) / scale)
+        setZoomScale(1, animated: false)
+        contentInset = .zero
+        layoutZoom = newZoom
+        minimumZoomScale = Self.minZoom / layoutZoom
+        maximumZoomScale = Self.maxZoom / layoutZoom
+        pendingCenter = CGPoint(x: center.x * k, y: center.y * k)
+        laidOutWidth = 0
+        setNeedsLayout()
+        layoutIfNeeded()
+        for v in views.values { v.setZoom(1) }
+        let dx = max(0, (bounds.width - contentSize.width) / 2)
+        contentInset = UIEdgeInsets(top: 0, left: dx, bottom: 0, right: dx)
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {

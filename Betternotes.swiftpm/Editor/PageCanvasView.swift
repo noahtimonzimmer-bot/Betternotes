@@ -30,6 +30,8 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     var straighten = true
     /// Draw a shape, rest the pencil briefly, lift → clean shape (any pen).
     var holdToShape = true
+    /// Lightly smooth every handwritten stroke when the pencil lifts.
+    var smoothInk = true
     private let holdObserver = HoldObserver(target: nil, action: nil)
     private let eraserRing = CAShapeLayer()
     private let pointerObserver = PointerObserver(target: nil, action: nil)
@@ -93,6 +95,9 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     private let selectionLayer = CAShapeLayer()
     private let resizeHandle = UIView(frame: CGRect(x: 0, y: 0, width: 28, height: 28))
     private let selectionBar = UIStackView()
+    private let selectionHit = UIView()
+    private var resizeAnchor = CGPoint.zero
+    private var resizeStart = CGPoint.zero
     private enum SelectDrag { case lasso, move(CGPoint), resize(anchor: CGPoint, start: CGPoint) }
     private var selectDrag: SelectDrag?
 
@@ -430,9 +435,11 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
                canvasView.drawing.strokes.count == expected,
                let last = canvasView.drawing.strokes.last {
                 let held = self.holdToShape && self.holdObserver.heldAtEnd
-                let replacement = self.mode == .shape ? ShapeRecognizer.shape(from: last)
+                let shaped = self.mode == .shape ? ShapeRecognizer.shape(from: last)
                     : held ? ShapeRecognizer.shape(from: last, strict: true)
                     : (self.straighten ? ShapeRecognizer.straightLine(from: last) : nil)
+                let replacement = shaped ?? (self.smoothInk && (canvasView.tool as? PKInkingTool)?.inkType != .marker
+                                             ? ShapeRecognizer.smoothed(last) : nil)
                 if let replacement {
                     var d = canvasView.drawing
                     d.strokes[d.strokes.count - 1] = replacement
@@ -632,31 +639,59 @@ extension PageCanvasView {
         resizeHandle.layer.borderColor = UIColor.white.cgColor
         resizeHandle.layer.borderWidth = 3
         resizeHandle.isHidden = true
-        resizeHandle.isUserInteractionEnabled = false
+        resizeHandle.accessibilityIdentifier = "bn.item"     // fingers here don't scroll the page
+        resizeHandle.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(resizeSelectionPan(_:))))
+        selectionHit.accessibilityIdentifier = "bn.item"
+        selectionHit.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.001)
+        selectionHit.isHidden = true
+        selectionHit.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(moveSelectionPan(_:))))
+        addSubview(selectionHit)
         addSubview(resizeHandle)
 
         selectionBar.axis = .horizontal
-        selectionBar.spacing = 4
+        selectionBar.spacing = 2
+        selectionBar.alignment = .center
         selectionBar.isLayoutMarginsRelativeArrangement = true
-        selectionBar.layoutMargins = UIEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
-        selectionBar.backgroundColor = .secondarySystemBackground
-        selectionBar.layer.cornerRadius = 12
-        selectionBar.layer.shadowOpacity = 0.2
-        selectionBar.layer.shadowRadius = 6
+        selectionBar.layoutMargins = UIEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
+        selectionBar.backgroundColor = .systemBackground
+        selectionBar.layer.cornerRadius = 26
+        selectionBar.layer.cornerCurve = .continuous
+        selectionBar.layer.borderWidth = 0.5
+        selectionBar.layer.borderColor = UIColor.separator.cgColor
         selectionBar.isHidden = true
 
         let colors = UIButton(type: .system)
-        colors.setImage(UIImage(systemName: "paintpalette"), for: .normal)
+        colors.setImage(UIImage(systemName: "chevron.down.circle.fill")?
+            .withTintColor(.label, renderingMode: .alwaysOriginal), for: .normal)
+        colors.accessibilityLabel = "Farbe"
         colors.showsMenuAsPrimaryAction = true
         colors.menu = UIMenu(title: "Farbe", children: ToolController.palette.map { c in
             UIAction(title: "", image: UIImage(systemName: "circle.fill")?.withTintColor(c, renderingMode: .alwaysOriginal)) { [weak self] _ in
                 self?.recolorSelection(c)
             }
         })
+        colors.widthAnchor.constraint(equalToConstant: 44).isActive = true
         selectionBar.addArrangedSubview(colors)
-        selectionBar.addArrangedSubview(barButton("textformat", "In Text umwandeln") { [weak self] in self?.selectionToText() })
-        selectionBar.addArrangedSubview(barButton("doc.on.doc", "Als Bild kopieren") { [weak self] in self?.copySelection() })
-        selectionBar.addArrangedSubview(barButton("trash", "Löschen") { [weak self] in self?.deleteSelection() })
+        selectionBar.addArrangedSubview(barSeparator())
+        selectionBar.addArrangedSubview(barButton("character.textbox", "In Text umwandeln") { [weak self] in self?.selectionToText() })
+        selectionBar.addArrangedSubview(barSeparator())
+        selectionBar.addArrangedSubview(barButton("scissors", "Ausschneiden") { [weak self] in
+            self?.copySelection()
+            self?.deleteSelection()
+        })
+        selectionBar.addArrangedSubview(barButton("plus.square.on.square", "Duplizieren") { [weak self] in self?.duplicateSelection() })
+        let trash = barButton("trash", "Löschen") { [weak self] in self?.deleteSelection() }
+        trash.tintColor = .systemRed
+        selectionBar.addArrangedSubview(trash)
+        let more = UIButton(type: .system)
+        more.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
+        more.showsMenuAsPrimaryAction = true
+        more.menu = UIMenu(children: [
+            UIAction(title: "Kopieren", image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in self?.copySelection() },
+            UIAction(title: "In Text umwandeln", image: UIImage(systemName: "character.textbox")) { [weak self] _ in self?.selectionToText() },
+        ])
+        more.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        selectionBar.addArrangedSubview(more)
         addSubview(selectionBar)
 
         selectGesture.isEnabled = false
@@ -666,11 +701,69 @@ extension PageCanvasView {
         addGestureRecognizer(clearSelectionTap)
     }
 
+    private func barSeparator() -> UIView {
+        let v = UIView()
+        v.backgroundColor = .separator
+        v.widthAnchor.constraint(equalToConstant: 0.5).isActive = true
+        v.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        return v
+    }
+
+    @objc fileprivate func moveSelectionPan(_ g: UIPanGestureRecognizer) {
+        guard !selected.isEmpty else { return }
+        let t = g.translation(in: self)
+        transformSelection(CGAffineTransform(translationX: t.x, y: t.y))
+        if g.state == .ended || g.state == .cancelled {
+            selectionBase = selected.map { canvas.drawing.strokes[$0] }
+            saveCanvas()
+        }
+    }
+
+    @objc fileprivate func resizeSelectionPan(_ g: UIPanGestureRecognizer) {
+        guard !selected.isEmpty else { return }
+        if g.state == .began {
+            let r = selectionRect
+            resizeAnchor = CGPoint(x: r.minX, y: r.minY)
+            resizeStart = CGPoint(x: r.maxX, y: r.maxY)
+        }
+        let t = g.translation(in: self)
+        let p = CGPoint(x: resizeStart.x + t.x, y: resizeStart.y + t.y)
+        let d0 = max(hypot(resizeStart.x - resizeAnchor.x, resizeStart.y - resizeAnchor.y), 1)
+        let k = max(0.1, hypot(p.x - resizeAnchor.x, p.y - resizeAnchor.y) / d0)
+        var tr = CGAffineTransform(translationX: resizeAnchor.x, y: resizeAnchor.y)
+        tr = tr.scaledBy(x: k, y: k).translatedBy(x: -resizeAnchor.x, y: -resizeAnchor.y)
+        transformSelection(tr)
+        if g.state == .ended || g.state == .cancelled {
+            selectionBase = selected.map { canvas.drawing.strokes[$0] }
+            saveCanvas()
+        }
+    }
+
+    fileprivate func duplicateSelection() {
+        var d = canvas.drawing
+        let copies = selected.compactMap { d.strokes.indices.contains($0) ? d.strokes[$0] : nil }.map { s -> PKStroke in
+            var c = s
+            c.transform = s.transform.concatenating(CGAffineTransform(translationX: 24, y: 24))
+            return c
+        }
+        guard !copies.isEmpty else { return }
+        let start = d.strokes.count
+        d.strokes.append(contentsOf: copies)
+        applying = true
+        canvas.drawing = d
+        applying = false
+        selected = Array(start..<(start + copies.count))   // continue with the copy selected
+        selectionBase = copies
+        updateSelectionUI()
+        saveCanvas()
+    }
+
     private func barButton(_ symbol: String, _ label: String, _ action: @escaping () -> Void) -> UIButton {
         let b = UIButton(type: .system, primaryAction: UIAction { _ in action() })
         b.setImage(UIImage(systemName: symbol), for: .normal)
         b.accessibilityLabel = label
-        b.widthAnchor.constraint(equalToConstant: 36).isActive = true
+        b.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        b.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 19, weight: .regular), forImageIn: .normal)
         return b
     }
 
@@ -687,8 +780,11 @@ extension PageCanvasView {
         selectionLayer.isHidden = hidden
         resizeHandle.isHidden = hidden
         selectionBar.isHidden = hidden
+        selectionHit.isHidden = hidden
         guard !hidden else { return }
         selectionLayer.path = UIBezierPath(roundedRect: r, cornerRadius: 6).cgPath
+        selectionHit.frame = r
+        bringSubviewToFront(selectionHit)
         resizeHandle.center = CGPoint(x: r.maxX, y: r.maxY)
         let size = selectionBar.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
         var x = r.midX - size.width / 2
@@ -719,10 +815,9 @@ extension PageCanvasView {
         switch g.state {
         case .began:
             let r = selectionRect
-            if !selected.isEmpty, resizeHandle.frame.insetBy(dx: -14, dy: -14).contains(p) {
-                selectDrag = .resize(anchor: CGPoint(x: r.minX, y: r.minY), start: p)
-            } else if !selected.isEmpty, r.contains(p) {
-                selectDrag = .move(p)
+            if !selected.isEmpty, resizeHandle.frame.insetBy(dx: -14, dy: -14).contains(p) || r.contains(p) {
+                selectDrag = nil   // the selection area and handle move/resize it themselves
+                return
             } else {
                 clearSelection()
                 selectDrag = .lasso

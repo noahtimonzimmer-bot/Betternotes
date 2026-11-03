@@ -148,7 +148,10 @@ struct EditorView: View {
                 .popover(isPresented: $showAddPage, arrowEdge: .top) {
                     AddPagePanel(doc: doc, current: model.currentPage,
                                  didInsert: { i in model.scrollToPage?(i) },
-                                 pickPhoto: { showPhotoPicker = true })
+                                 pickPhoto: {
+                                     // wait until the popover is gone, else iPadOS drops the picker
+                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { showPhotoPicker = true }
+                                 })
                 }
             Button { showSearch = true } label: { Image(systemName: "magnifyingglass") }
             Button { exportPDF() } label: { Image(systemName: "square.and.arrow.up") }
@@ -256,7 +259,7 @@ struct DocumentCanvas: UIViewRepresentable {
 
     func updateUIView(_ v: DocumentScrollView, context: Context) {
         _ = tools.kind; _ = tools.color; _ = tools.markerColor; _ = tools.width; _ = tools.rulerActive   // observe tool changes
-        _ = settings.marginRatio; _ = settings.exportMarginNotes; _ = settings.straightenLines; _ = settings.holdToShape; _ = settings.onlyPencilDraws
+        _ = settings.marginRatio; _ = settings.exportMarginNotes; _ = settings.straightenLines; _ = settings.holdToShape; _ = settings.smoothInk; _ = settings.onlyPencilDraws
         v.setPages(store.document(docID)?.pages ?? [])
         v.forEachPageView { view, page in context.coordinator.configure(view, page: page) }
     }
@@ -278,7 +281,7 @@ struct DocumentCanvas: UIViewRepresentable {
         /// start (more if you write further out); the paper stays centred.
         func margins(for page: NotePage) -> (left: CGFloat, right: CGFloat) {
             // Fixed, generous space on both sides; never changes while you work (no jumping).
-            let d = page.isBoard ? defaultMargin(for: page) : max(defaultMargin(for: page), page.width * 2)
+            let d = page.isBoard ? defaultMargin(for: page) : max(defaultMargin(for: page), page.width)
             return (max(d, page.marginLeft.map { CGFloat($0) } ?? d), max(d, page.marginRight.map { CGFloat($0) } ?? d))
         }
 
@@ -318,6 +321,7 @@ struct DocumentCanvas: UIViewRepresentable {
             v.growStep = 0
             v.straighten = settings.straightenLines
             v.holdToShape = settings.holdToShape
+            v.smoothInk = settings.smoothInk
             v.canvas.drawingPolicy = settings.onlyPencilDraws ? .pencilOnly : .anyInput
             v.fingerDraws = !settings.onlyPencilDraws
             v.canvas.tool = tools.tool
