@@ -616,6 +616,34 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         }
     }
 
+    /// Paper, photos, text and every visible ink layer inside `rect` (view coordinates).
+    func composedImage(of rect: CGRect, format: UIGraphicsImageRendererFormat) -> UIImage {
+        UIGraphicsImageRenderer(bounds: rect, format: format).image { ctx in
+            PageBackground.surfaceColor.setFill()
+            ctx.fill(rect)
+            UIColor.white.setFill()
+            ctx.fill(paper.frame)
+            paper.image?.draw(in: paper.frame)
+            for item in page.images {
+                imageViews[item.id]?.image?.draw(in: viewRect(item.frame))
+            }
+            for tb in page.textBoxes where !tb.text.isEmpty {
+                let attrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: tb.fontSize * scale),
+                                                            .foregroundColor: UIColor(hex: tb.colorHex)]
+                (tb.text as NSString).draw(in: viewRect(tb.frame).insetBy(dx: 4 * scale, dy: 4 * scale), withAttributes: attrs)
+            }
+            // ink layers bottom → top (drawings are in view coordinates)
+            let light = UITraitCollection(userInterfaceStyle: .light)
+            for layer in page.allLayers where !layer.hidden {
+                let d = layer.id == activeLayerID ? canvas.drawing : layerCanvases.first { $0.id == layer.id }?.canvas.drawing
+                guard let d, !d.strokes.isEmpty else { continue }
+                var ink = UIImage()
+                light.performAsCurrent { ink = d.image(from: rect, scale: format.scale) }
+                ink.draw(in: rect)
+            }
+        }
+    }
+
     private func capture(_ path: UIBezierPath) {
         let rect = path.bounds.intersection(bounds)
         guard rect.width > 8, rect.height > 8 else { return }
@@ -623,9 +651,8 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         format.scale = min((window?.screen.scale ?? 2) * max(zoom, 1), 6)
         format.opaque = false
         // The drawn loop only marks the area; the photo is its bounding rectangle.
-        let image = UIGraphicsImageRenderer(bounds: rect, format: format).image { _ in
-            drawHierarchy(in: bounds, afterScreenUpdates: true)
-        }
+        // Composed from the page's content (a screen snapshot misses PencilKit's GPU-drawn ink).
+        let image = composedImage(of: rect, format: format)
         onCapture?(image)
 
         let flash = CAShapeLayer()

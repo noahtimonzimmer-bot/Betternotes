@@ -70,7 +70,10 @@ struct LibraryView: View {
         .task {
             if SelfTest.enabled { await SelfTest.run(store: store) { selection = $0 } }
         }
+        .navigationSplitViewStyle(.balanced)   // sidebar pushes the content instead of covering it
         .onChange(of: selection) { _, id in
+            // opening a notebook: give the full width to writing (sidebar via the button)
+            if id != nil { withAnimation { columns = .detailOnly } }
             guard let id, !tabs.contains(id) else { return }
             tabs.append(id)
             if tabs.count > 8 { tabs.removeFirst() }
