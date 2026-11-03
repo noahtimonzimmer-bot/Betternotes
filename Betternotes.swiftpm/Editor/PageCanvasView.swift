@@ -31,6 +31,8 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     /// Draw a shape, rest the pencil briefly, lift → clean shape (any pen).
     var holdToShape = true
     private let holdObserver = HoldObserver(target: nil, action: nil)
+    private let eraserRing = CAShapeLayer()
+    private let pointerObserver = PointerObserver(target: nil, action: nil)
     /// Set when the shape was already placed while the pencil was resting.
     private var snappedDuringHold = false
     /// Shape placed while holding, adjustable until the pencil lifts.
@@ -142,6 +144,16 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         addGestureRecognizer(pressGesture)
         holdObserver.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
         canvas.addGestureRecognizer(holdObserver)
+        // eraser ring: follows the pencil while erasing and while hovering
+        eraserRing.fillColor = UIColor.clear.cgColor
+        eraserRing.strokeColor = UIColor(white: 0.55, alpha: 1).cgColor
+        eraserRing.lineWidth = 1.5
+        eraserRing.isHidden = true
+        layer.addSublayer(eraserRing)
+        pointerObserver.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+        pointerObserver.onPoint = { [weak self] p in self?.moveEraserRing(to: p) }
+        canvas.addGestureRecognizer(pointerObserver)
+        canvas.addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(hoverPencil(_:))))
         holdObserver.onHold = { [weak self] pts in self?.snapWhileHolding(pts) }
         holdObserver.onMoveAfterHold = { [weak self] p in self?.adjustShape(to: p) }
         holdObserver.onEndAfterHold = { [weak self] in self?.finishSnap() }
@@ -1053,6 +1065,61 @@ extension PageCanvasView {
         layoutItems()
         layoutObjectSelection()
         if g.state == .ended || g.state == .cancelled { commitPage() }
+    }
+}
+
+// MARK: - Eraser ring
+
+extension PageCanvasView {
+    fileprivate func moveEraserRing(to p: CGPoint?) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        guard let p, canvas.tool is PKEraserTool, canvas.isUserInteractionEnabled else {
+            eraserRing.isHidden = true
+            return
+        }
+        let r = ToolController.eraserWidth / 2
+        eraserRing.path = UIBezierPath(ovalIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)).cgPath
+        eraserRing.isHidden = false
+        layer.addSublayer(eraserRing)   // keep on top
+    }
+
+    @objc fileprivate func hoverPencil(_ g: UIHoverGestureRecognizer) {
+        switch g.state {
+        case .began, .changed: moveEraserRing(to: g.location(in: self))
+        default: moveEraserRing(to: nil)
+        }
+    }
+}
+
+/// Reports pencil positions (nil on lift) without interfering with drawing.
+final class PointerObserver: UIGestureRecognizer {
+    var onPoint: ((CGPoint?) -> Void)?
+
+    override init(target: Any?, action: Selector?) {
+        super.init(target: target, action: action)
+        cancelsTouchesInView = false
+        delaysTouchesBegan = false
+        delaysTouchesEnded = false
+    }
+
+    override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        onPoint?(touches.first.map { $0.location(in: view?.superview) })
+    }
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        onPoint?(touches.first.map { $0.location(in: view?.superview) })
+    }
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        onPoint?(nil)
+        state = .failed
+    }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        onPoint?(nil)
+        state = .failed
     }
 }
 

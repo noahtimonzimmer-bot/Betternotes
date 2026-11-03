@@ -42,6 +42,8 @@ final class ToolController: ObservableObject {
         UIColor(red: 0.98, green: 0.80, blue: 0.10, alpha: 1),
         UIColor(red: 0.20, green: 0.75, blue: 0.35, alpha: 1),
     ]
+    /// Eraser size in screen points (also the size of the eraser ring).
+    static let eraserWidth: CGFloat = 22
     static let widths: [CGFloat] = [2.2, 3.4, 5.5]
 
     @Published var kind: Kind = .pen
@@ -67,7 +69,7 @@ final class ToolController: ObservableObject {
         case .pen, .shape: return PKInkingTool(.monoline, color: color, width: width)
         case .pencil: return PKInkingTool(.pencil, color: color, width: width * 1.5)
         case .marker: return PKInkingTool(.marker, color: markerColor, width: width * 6)
-        case .eraser: return PKEraserTool(settings.eraserWholeStroke ? .vector : .bitmap)
+        case .eraser: return PKEraserTool(settings.eraserWholeStroke ? .vector : .bitmap, width: Self.eraserWidth)
         case .lasso, .cameraLasso, .text: return PKLassoTool()
         }
     }

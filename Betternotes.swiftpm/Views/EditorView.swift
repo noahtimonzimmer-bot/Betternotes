@@ -80,8 +80,7 @@ struct EditorView: View {
                         .font(.callout.weight(.medium))
                         .padding(.horizontal, 16).padding(.vertical, 10)
                         .background(Color(.systemBackground), in: Capsule())
-                        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
-                        .padding(.top, 70)
+                                        .padding(.top, 70)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 Text("\(model.currentPage + 1) / \(doc.pages.count)")
@@ -456,7 +455,6 @@ struct FloatingToolBar: View {
         .frame(maxWidth: vertical ? nil : area.width - 24, maxHeight: vertical ? area.height - 24 : nil)
         .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color.primary.opacity(0.08)))
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
         .position(x: a.x + drag.width, y: a.y + drag.height)
         .simultaneousGesture(DragGesture(minimumDistance: 6)
             .onChanged { drag = $0.translation }
@@ -494,7 +492,6 @@ struct ToolPaletteView: View {
         ZStack {
             // the band
             arc(r).stroke(Color(.systemBackground), style: StrokeStyle(lineWidth: Self.band, lineCap: .round))
-                .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
             arc(r).stroke(Color.primary.opacity(0.06), style: StrokeStyle(lineWidth: Self.band, lineCap: .round))
 
             item(0, of: count) {
@@ -530,7 +527,6 @@ struct ToolPaletteView: View {
             if let expanded {
                 let outer = r + Self.band + 8
                 arc(outer).stroke(Color(.systemBackground), style: StrokeStyle(lineWidth: 54, lineCap: .round))
-                    .shadow(color: .black.opacity(0.15), radius: 10, y: 3)
                 switch expanded {
                 case .colors:
                     let colors = ToolController.palette
