@@ -80,6 +80,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     private var zoom: CGFloat = 1
     private var renderedWidth: CGFloat = 0
     private var applying = false
+    private var layoutSetDrawings: [String] = []
     private var strokeCountAtToolStart = 0
 
     private lazy var cameraGesture = UIPanGestureRecognizer(target: self, action: #selector(cameraPan(_:)))
@@ -201,7 +202,12 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
         layoutObjectSelection()
         if changed {
             applying = true
-            canvas.drawing = pageDrawing.transformed(using: toView)
+            let shown = pageDrawing.transformed(using: toView)
+            canvas.drawing = shown
+            // PencilKit reports this change later (possibly after the next resize): remember it so
+            // that late callback is not mistaken for an edit and re-scaled with the wrong size.
+            layoutSetDrawings.append(Self.signature(shown))
+            if layoutSetDrawings.count > 8 { layoutSetDrawings.removeFirst() }
             for l in layerCanvases { l.canvas.drawing = l.drawing.transformed(using: toView) }
             applying = false
             clearSelection()
@@ -414,8 +420,21 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
 
     // MARK: PKCanvasViewDelegate
 
+    /// Cheap identity of a drawing: stroke count + rounded bounds.
+    private static func signature(_ d: PKDrawing) -> String {
+        let b = d.bounds
+        guard !b.isNull else { return "\(d.strokes.count)" }
+        return "\(d.strokes.count)|\(Int(b.minX.rounded()))|\(Int(b.minY.rounded()))|\(Int(b.width.rounded()))|\(Int(b.height.rounded()))"
+    }
+
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
         guard !applying, scale > 0 else { return }
+        // Late echo of a drawing we set ourselves during layout → not an edit, ignore.
+        if let i = layoutSetDrawings.firstIndex(of: Self.signature(canvasView.drawing)) {
+            layoutSetDrawings.removeSubrange(...i)
+            return
+        }
+        layoutSetDrawings.removeAll()
         pageDrawing = canvasView.drawing.transformed(using: toView.inverted())
         onDrawingChange?(activeLayerID, pageDrawing)
     }
