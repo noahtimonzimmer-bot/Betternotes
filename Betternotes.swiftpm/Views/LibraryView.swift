@@ -67,6 +67,9 @@ struct LibraryView: View {
                 LibraryGridView(folder: $gridFolder, actions: actions) { selection = $0 }
             }
         }
+        .task {
+            if SelfTest.enabled { await SelfTest.run(store: store) { selection = $0 } }
+        }
         .onChange(of: selection) { _, id in
             guard let id, !tabs.contains(id) else { return }
             tabs.append(id)

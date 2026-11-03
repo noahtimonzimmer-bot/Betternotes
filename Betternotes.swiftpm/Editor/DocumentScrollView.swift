@@ -83,6 +83,9 @@ final class DocumentScrollView: UIScrollView, UIScrollViewDelegate {
         p.allLayers.map { "\($0.id)\($0.hidden)" }.joined() + "\(p.activeLayerID)"
     }
 
+    /// Page view currently on screen for a page (nil when scrolled away).
+    func pageView(for id: UUID) -> PageCanvasView? { views[id] }
+
     func forEachPageView(_ body: (PageCanvasView, NotePage) -> Void) {
         for p in pages { if let v = views[p.id] { body(v, p) } }
     }

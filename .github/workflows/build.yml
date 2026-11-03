@@ -37,3 +37,64 @@ jobs:
         with:
           name: Betternotes-unsigned-ipa
           path: Betternotes.swiftpm/Betternotes-unsigned.ipa
+
+  simulate:
+    # Runs the app in the iPad simulator: launch, screenshots, built-in self-test (-selftest).
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Boot iPad simulator
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -m1 "iPad Pro 13-inch" | grep -oE '[0-9A-F-]{36}')
+          [ -z "$UDID" ] && UDID=$(xcrun simctl list devices available | grep -m1 "iPad" | grep -oE '[0-9A-F-]{36}')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl list devices available | grep "$UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Build for simulator
+        working-directory: Betternotes.swiftpm
+        run: |
+          set +e
+          xcodebuild -scheme Betternotes -destination "id=$UDID" -derivedDataPath "$RUNNER_TEMP/sim" build > simbuild.log 2>&1
+          status=$?
+          grep -E "error:|BUILD (SUCCEEDED|FAILED)" simbuild.log | sort -u | head -100
+          exit $status
+
+      - name: Install, screenshot, self-test
+        working-directory: Betternotes.swiftpm
+        run: |
+          mkdir -p shots
+          app=$(find "$RUNNER_TEMP/sim/Build/Products" -maxdepth 3 -name "*.app" | head -1)
+          BUNDLE=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$app/Info.plist")
+          xcrun simctl install "$UDID" "$app"
+          xcrun simctl launch "$UDID" "$BUNDLE"
+          sleep 8
+          xcrun simctl io "$UDID" screenshot shots/1-library.png
+          xcrun simctl terminate "$UDID" "$BUNDLE" || true
+          xcrun simctl launch --console-pty "$UDID" "$BUNDLE" -selftest > selftest.log 2>&1 &
+          PID=$!
+          for i in $(seq 1 150); do
+            for name in editor end; do
+              if grep -q "SELFTEST SCREENSHOT $name" selftest.log && [ ! -f "shots/2-$name.png" ]; then
+                xcrun simctl io "$UDID" screenshot "shots/2-$name.png"
+              fi
+            done
+            grep -q "SELFTEST DONE" selftest.log && break
+            sleep 1
+          done
+          sleep 2
+          kill $PID 2>/dev/null || true
+          echo "----- self-test -----"
+          grep -E "SELFTEST|Fatal|fatal error|Terminating" selftest.log || tail -50 selftest.log
+          grep -q "SELFTEST DONE" selftest.log && ! grep -q "SELFTEST FAIL" selftest.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: simulator-screenshots
+          path: |
+            Betternotes.swiftpm/shots
+            Betternotes.swiftpm/selftest.log
