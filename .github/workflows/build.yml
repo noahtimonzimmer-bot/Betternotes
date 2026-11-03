@@ -77,7 +77,7 @@ jobs:
           xcrun simctl launch --console-pty "$UDID" "$BUNDLE" -selftest > selftest.log 2>&1 &
           PID=$!
           for i in $(seq 1 150); do
-            for name in editor end; do
+            for name in editor edits end; do
               if grep -q "SELFTEST SCREENSHOT $name" selftest.log && [ ! -f "shots/2-$name.png" ]; then
                 xcrun simctl io "$UDID" screenshot "shots/2-$name.png"
               fi

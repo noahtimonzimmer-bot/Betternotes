@@ -1146,9 +1146,14 @@ extension PageCanvasView {
     }
 
     @objc fileprivate func moveObject(_ g: UIPanGestureRecognizer) {
-        guard let id = selectedObject, scale > 0 else { return }
         let t = g.translation(in: self)
         g.setTranslation(.zero, in: self)
+        moveSelectedObject(by: t, commit: g.state == .ended || g.state == .cancelled)
+    }
+
+    /// Moves the selected photo/text box by a distance in screen points.
+    func moveSelectedObject(by t: CGPoint, commit: Bool) {
+        guard let id = selectedObject, scale > 0 else { return }
         let dx = t.x / scale, dy = t.y / scale
         if let i = page.textBoxes.firstIndex(where: { $0.id == id }) {
             page.textBoxes[i].frame = page.textBoxes[i].frame.offsetBy(dx: dx, dy: dy)
@@ -1157,13 +1162,18 @@ extension PageCanvasView {
         }
         layoutItems()
         layoutObjectSelection()
-        if g.state == .ended || g.state == .cancelled { commitPage() }
+        if commit { commitPage() }
     }
 
     @objc fileprivate func resizeObject(_ g: UIPanGestureRecognizer) {
-        guard let id = selectedObject, scale > 0 else { return }
         let t = g.translation(in: self)
         g.setTranslation(.zero, in: self)
+        resizeSelectedObject(by: t, commit: g.state == .ended || g.state == .cancelled)
+    }
+
+    /// Drags the resize handle of the selected photo/text box by a distance in screen points.
+    func resizeSelectedObject(by t: CGPoint, commit: Bool) {
+        guard let id = selectedObject, scale > 0 else { return }
         if let i = page.images.firstIndex(where: { $0.id == id }) {
             var f = page.images[i].frame
             let aspect = f.height / max(f.width, 1)
@@ -1178,7 +1188,7 @@ extension PageCanvasView {
         }
         layoutItems()
         layoutObjectSelection()
-        if g.state == .ended || g.state == .cancelled { commitPage() }
+        if commit { commitPage() }
     }
 }
 
@@ -1276,6 +1286,51 @@ extension PageCanvasView {
             commitPage()
         }
     }
+}
+
+// MARK: - Hooks for the automated self-test (same code paths as the gestures)
+
+extension PageCanvasView {
+    var testSelectedStrokeCount: Int { selected.count }
+    var testSelectedObject: UUID? { selectedObject }
+    var testSelectionRect: CGRect { selectionRect }
+
+    /// Lasso: circles `rect` (screen points) and selects the strokes inside.
+    func testLasso(_ rect: CGRect) { select(in: UIBezierPath(rect: rect)) }
+
+    func testMoveSelection(by t: CGPoint) {
+        transformSelection(CGAffineTransform(translationX: t.x, y: t.y))
+        selectionBase = selected.map { canvas.drawing.strokes[$0] }
+        saveCanvas()
+    }
+
+    func testScaleSelection(_ k: CGFloat) {
+        let r = selectionRect
+        var tr = CGAffineTransform(translationX: r.minX, y: r.minY)
+        tr = tr.scaledBy(x: k, y: k).translatedBy(x: -r.minX, y: -r.minY)
+        transformSelection(tr)
+        selectionBase = selected.map { canvas.drawing.strokes[$0] }
+        saveCanvas()
+    }
+
+    func testDuplicateSelection() { duplicateSelection() }
+    func testDeleteSelection() { deleteSelection() }
+    func testRecolorSelection(_ c: UIColor) { recolorSelection(c) }
+    func testCopySelection() { copySelection() }
+    func testCutSelection() { copySelection(); deleteSelection() }
+
+    /// Long-press paste at a screen point.
+    func testPaste(at p: CGPoint) {
+        pastePoint = p
+        paste()
+    }
+
+    /// Camera lasso around `rect` (screen points).
+    func testCameraLasso(_ rect: CGRect) { capture(UIBezierPath(ovalIn: rect)) }
+
+    func testBringToFront(_ id: UUID) { bringToFront(id) }
+    func testScaleFont(_ id: UUID, by k: CGFloat) { scaleFont(id, by: k) }
+    func testViewRect(_ r: CGRect) -> CGRect { viewRect(r) }
 }
 
 extension UIColor {
