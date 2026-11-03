@@ -42,12 +42,12 @@ final class ToolController: ObservableObject {
         UIColor(red: 0.98, green: 0.80, blue: 0.10, alpha: 1),
         UIColor(red: 0.20, green: 0.75, blue: 0.35, alpha: 1),
     ]
-    static let widths: [CGFloat] = [1.6, 2.6, 4.5]
+    static let widths: [CGFloat] = [2.2, 3.4, 5.5]
 
     @Published var kind: Kind = .pen
     @Published var color: UIColor = ToolController.palette[0]
     @Published var markerColor: UIColor = ToolController.palette[4]
-    @Published var width: CGFloat = 2.6
+    @Published var width: CGFloat = 3.4
     /// Where to show the squeeze palette (editor coordinates); nil = hidden.
     @Published var paletteLocation: CGPoint?
     /// Apple's ruler on the page (two fingers rotate/move it).
@@ -63,7 +63,8 @@ final class ToolController: ObservableObject {
 
     var tool: PKTool {
         switch kind {
-        case .pen, .shape: return PKInkingTool(.pen, color: color, width: width)
+        // Monoline: even, saturated ballpoint-like line (instead of the thin, pressure-wobbly "pen")
+        case .pen, .shape: return PKInkingTool(.monoline, color: color, width: width)
         case .pencil: return PKInkingTool(.pencil, color: color, width: width * 1.5)
         case .marker: return PKInkingTool(.marker, color: markerColor, width: width * 6)
         case .eraser: return PKEraserTool(settings.eraserWholeStroke ? .vector : .bitmap)

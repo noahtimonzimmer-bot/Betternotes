@@ -79,7 +79,7 @@ struct EditorView: View {
                     Label(t, systemImage: "checkmark.circle.fill")
                         .font(.callout.weight(.medium))
                         .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(.regularMaterial, in: Capsule())
+                        .background(Color(.systemBackground), in: Capsule())
                         .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
                         .padding(.top, 70)
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -87,7 +87,7 @@ struct EditorView: View {
                 Text("\(model.currentPage + 1) / \(doc.pages.count)")
                     .font(.caption.monospacedDigit())
                     .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(.thinMaterial, in: Capsule())
+                    .background(Color(.systemBackground).opacity(0.95), in: Capsule())
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(12)
                     .onTapGesture { askGoTo = true }
@@ -410,9 +410,9 @@ struct ToolBar: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(.regularMaterial, in: Capsule())
+        .background(Color(.systemBackground), in: Capsule())
         .overlay(Capsule().stroke(Color.primary.opacity(0.08)))
-        .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
     }
 
     private func toolTint(_ k: ToolController.Kind) -> Color {
@@ -478,7 +478,7 @@ struct ToolPaletteView: View {
         let count = kinds.count + 3          // undo + tools + width + colour
         ZStack {
             // the band
-            arc(r).stroke(.regularMaterial, style: StrokeStyle(lineWidth: Self.band, lineCap: .round))
+            arc(r).stroke(Color(.systemBackground), style: StrokeStyle(lineWidth: Self.band, lineCap: .round))
                 .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
             arc(r).stroke(Color.primary.opacity(0.06), style: StrokeStyle(lineWidth: Self.band, lineCap: .round))
 
@@ -514,7 +514,7 @@ struct ToolPaletteView: View {
             // second arc: colours or widths
             if let expanded {
                 let outer = r + Self.band + 8
-                arc(outer).stroke(.regularMaterial, style: StrokeStyle(lineWidth: 54, lineCap: .round))
+                arc(outer).stroke(Color(.systemBackground), style: StrokeStyle(lineWidth: 54, lineCap: .round))
                     .shadow(color: .black.opacity(0.15), radius: 10, y: 3)
                 switch expanded {
                 case .colors:

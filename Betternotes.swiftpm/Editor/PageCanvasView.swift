@@ -196,7 +196,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     func setZoom(_ z: CGFloat) {
         zoom = z
         let screen = window?.screen.scale ?? 2
-        canvas.contentScaleFactor = screen * min(max(z, 1), 2)
+        canvas.contentScaleFactor = screen * min(max(z, 1), 4)
         for l in layerCanvases { l.canvas.contentScaleFactor = canvas.contentScaleFactor }
         updateSelectionUI()
         requestBackgroundIfNeeded()
@@ -205,7 +205,7 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
     private func requestBackgroundIfNeeded() {
         guard let render = backgroundRenderer, paper.bounds.width > 0 else { return }
         let screen = window?.screen.scale ?? 2
-        let wanted = min(paper.bounds.width * screen * max(zoom, 1), 3600)
+        let wanted = min(paper.bounds.width * screen * max(zoom, 1), 6000)
         guard renderedWidth == 0 || wanted > renderedWidth * 1.3 || wanted < renderedWidth * 0.5 else { return }
         renderedWidth = wanted
         render(wanted) { [weak self] img in
@@ -459,7 +459,12 @@ final class PageCanvasView: UIView, PKCanvasViewDelegate, UITextViewDelegate, UI
             } else if let similar = d.strokes.last(where: { $0.ink.inkType == ink.inkType }) {
                 source = Self.restyled(rawStroke, like: similar)
             }
-            guard let shape = ShapeRecognizer.shape(from: source) ?? ShapeRecognizer.shape(from: rawStroke) else {
+            let strict = self.mode != .shape
+            guard let shape = ShapeRecognizer.shape(from: source, strict: strict)
+                    ?? ShapeRecognizer.shape(from: rawStroke, strict: strict) else {
+                // no clean shape: put the stroke back exactly as drawn – nothing disappears
+                d.strokes.append(source)
+                self.canvas.drawing = d
                 self.snappedDuringHold = false
                 return
             }
