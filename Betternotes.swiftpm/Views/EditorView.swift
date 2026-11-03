@@ -458,7 +458,7 @@ struct FloatingToolBar: View {
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).stroke(Color.primary.opacity(0.08)))
         .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
         .position(x: a.x + drag.width, y: a.y + drag.height)
-        .gesture(DragGesture(minimumDistance: 6)
+        .simultaneousGesture(DragGesture(minimumDistance: 6)
             .onChanged { drag = $0.translation }
             .onEnded { v in
                 let p = CGPoint(x: a.x + v.translation.width, y: a.y + v.translation.height)
